@@ -139,6 +139,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "liminal-memory"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "liminal-policy"
 version = "0.1.0"
 dependencies = [
