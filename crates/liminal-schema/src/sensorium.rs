@@ -18,6 +18,7 @@ pub enum SensorState {
     Denied,
     Busy,
     Unsupported,
+    Failed,
     DisabledByUser,
 }
 
@@ -130,6 +131,7 @@ mod tests {
             (SensorState::Denied, "denied"),
             (SensorState::Busy, "busy"),
             (SensorState::Unsupported, "unsupported"),
+            (SensorState::Failed, "failed"),
             (SensorState::DisabledByUser, "disabled_by_user"),
         ];
 
