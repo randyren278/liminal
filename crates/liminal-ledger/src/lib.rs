@@ -1,10 +1,17 @@
 //! Append-only event ledger: hash-chain integrity, erase-cascade invalidation, and
 //! sensor-gap acknowledgment (belief must never silently bridge a sensor outage).
 //!
-//! Master plan reference: §87 (Event Integrity), §88 (Crash Recovery), §103 (Forgetting),
-//! §142 (Required Mutation Tests #6, #9).
+//! Also provides a SQLite-backed persistence layer (`SqliteLedger`) for the `events` subset of
+//! §84's Data Model, with a single forward migration per §108 and crash recovery per §88 (on
+//! reopen, the event chain tail is re-verified rather than trusted).
+//!
+//! Master plan reference: §84 (Data Model), §87 (Event Integrity), §88 (Crash Recovery),
+//! §103 (Forgetting), §108 (Database Migration Policy), §142 (Required Mutation Tests #6, #9).
 
 use std::collections::HashMap;
+use std::path::Path;
+
+use rusqlite::Connection;
 use thiserror::Error;
 
 #[derive(Debug, Clone)]
@@ -36,6 +43,14 @@ pub enum LedgerError {
          record a SensorGap event before resuming belief"
     )]
     SensorGapNotAcknowledged(String),
+    #[error("sqlite ledger error: {0}")]
+    Database(String),
+}
+
+impl From<rusqlite::Error> for LedgerError {
+    fn from(err: rusqlite::Error) -> Self {
+        LedgerError::Database(err.to_string())
+    }
 }
 
 const GENESIS_HASH: &str = "0";
@@ -141,6 +156,223 @@ impl Ledger {
                 return Err(LedgerError::ChainBroken(event.sequence));
             }
             previous_hash = event.hash.clone();
+        }
+        Ok(())
+    }
+}
+
+const SCHEMA_VERSION: i64 = 1;
+
+/// §108: the single forward migration for this task's scope (`events` only; `schema_migrations`
+/// itself). Idempotent — safe to call on every open.
+fn migrate(conn: &Connection) -> Result<(), LedgerError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY
+         );
+         CREATE TABLE IF NOT EXISTS events (
+            id            TEXT PRIMARY KEY,
+            sequence      INTEGER NOT NULL UNIQUE,
+            kind          TEXT NOT NULL,
+            payload       TEXT NOT NULL,
+            previous_hash TEXT NOT NULL,
+            hash          TEXT NOT NULL
+         );",
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO schema_migrations (version) VALUES (?1)",
+        [SCHEMA_VERSION],
+    )?;
+    Ok(())
+}
+
+/// SQLite-backed counterpart to `Ledger`, persisting events to the §84 `events` table instead of
+/// holding them only in memory. Offers the same append/verify shape; sensor-gap and hash-chain
+/// state is reconstructed from the stored events on open (§88 step 3: verify the event-chain
+/// tail on restart, §109's replay requirement).
+pub struct SqliteLedger {
+    conn: Connection,
+    next_sequence: u64,
+    last_hash: String,
+    stream_last_ts_us: HashMap<String, i64>,
+    stream_gap_pending: HashMap<String, bool>,
+    max_silent_gap_us: i64,
+}
+
+impl SqliteLedger {
+    /// Open (creating if absent) a SQLite-backed ledger at `path`, running the forward migration
+    /// and reconstructing in-memory sensor-gap state from any events already stored.
+    pub fn open(path: &Path, max_silent_gap_us: i64) -> Result<Self, LedgerError> {
+        let conn = Connection::open(path)?;
+        Self::from_connection(conn, max_silent_gap_us)
+    }
+
+    fn from_connection(conn: Connection, max_silent_gap_us: i64) -> Result<Self, LedgerError> {
+        migrate(&conn)?;
+
+        let mut ledger = Self {
+            conn,
+            next_sequence: 0,
+            last_hash: GENESIS_HASH.to_string(),
+            stream_last_ts_us: HashMap::new(),
+            stream_gap_pending: HashMap::new(),
+            max_silent_gap_us,
+        };
+
+        let events = ledger.load_events()?;
+        for event in &events {
+            if let Some(stream_id) = event.payload.get("stream_id").and_then(|v| v.as_str()) {
+                let ts_us = event
+                    .payload
+                    .get("ts_us")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                match event.kind.as_str() {
+                    "observation" => {
+                        if let Some(&last) = ledger.stream_last_ts_us.get(stream_id) {
+                            if ts_us - last > ledger.max_silent_gap_us {
+                                ledger
+                                    .stream_gap_pending
+                                    .insert(stream_id.to_string(), true);
+                            }
+                        }
+                        ledger
+                            .stream_last_ts_us
+                            .insert(stream_id.to_string(), ts_us);
+                    }
+                    "sensor_gap" => {
+                        ledger
+                            .stream_gap_pending
+                            .insert(stream_id.to_string(), false);
+                        ledger
+                            .stream_last_ts_us
+                            .insert(stream_id.to_string(), ts_us);
+                    }
+                    _ => {}
+                }
+            }
+            ledger.next_sequence = event.sequence + 1;
+            ledger.last_hash = event.hash.clone();
+        }
+
+        Ok(ledger)
+    }
+
+    fn load_events(&self) -> Result<Vec<Event>, LedgerError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, sequence, kind, payload, previous_hash, hash FROM events ORDER BY sequence ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let payload_text: String = row.get(3)?;
+            Ok(Event {
+                id: row.get(0)?,
+                sequence: row.get::<_, i64>(1)? as u64,
+                kind: row.get(2)?,
+                payload: serde_json::from_str(&payload_text).unwrap_or(serde_json::Value::Null),
+                previous_hash: row.get(4)?,
+                hash: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(LedgerError::from)
+    }
+
+    fn append_raw(
+        &mut self,
+        id: impl Into<String>,
+        kind: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), LedgerError> {
+        let previous_hash = self.last_hash.clone();
+        let hash = compute_hash(&previous_hash, &payload);
+        let sequence = self.next_sequence;
+        self.conn.execute(
+            "INSERT INTO events (id, sequence, kind, payload, previous_hash, hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                id.into(),
+                sequence as i64,
+                kind,
+                payload.to_string(),
+                previous_hash,
+                hash,
+            ],
+        )?;
+        self.last_hash = hash;
+        self.next_sequence += 1;
+        Ok(())
+    }
+
+    /// See `Ledger::append_observation`.
+    pub fn append_observation(
+        &mut self,
+        id: impl Into<String>,
+        stream_id: &str,
+        ts_us: i64,
+    ) -> Result<(), LedgerError> {
+        if let Some(&last) = self.stream_last_ts_us.get(stream_id) {
+            if ts_us - last > self.max_silent_gap_us {
+                self.stream_gap_pending.insert(stream_id.to_string(), true);
+            }
+        }
+        self.stream_last_ts_us.insert(stream_id.to_string(), ts_us);
+        self.append_raw(
+            id,
+            "observation",
+            serde_json::json!({ "stream_id": stream_id, "ts_us": ts_us }),
+        )
+    }
+
+    /// See `Ledger::record_sensor_gap`.
+    pub fn record_sensor_gap(
+        &mut self,
+        id: impl Into<String>,
+        stream_id: &str,
+        ts_us: i64,
+    ) -> Result<(), LedgerError> {
+        self.stream_gap_pending.insert(stream_id.to_string(), false);
+        self.stream_last_ts_us.insert(stream_id.to_string(), ts_us);
+        self.append_raw(
+            id,
+            "sensor_gap",
+            serde_json::json!({ "stream_id": stream_id, "ts_us": ts_us }),
+        )
+    }
+
+    /// See `Ledger::append_belief`.
+    pub fn append_belief(
+        &mut self,
+        id: impl Into<String>,
+        stream_id: &str,
+        ts_us: i64,
+    ) -> Result<(), LedgerError> {
+        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {
+            return Err(LedgerError::SensorGapNotAcknowledged(stream_id.to_string()));
+        }
+        self.append_raw(
+            id,
+            "belief",
+            serde_json::json!({ "stream_id": stream_id, "ts_us": ts_us }),
+        )
+    }
+
+    pub fn events(&self) -> Result<Vec<Event>, LedgerError> {
+        self.load_events()
+    }
+
+    /// §87/§88 step 3/§109: verify the persisted hash chain has not been tampered with or torn
+    /// mid-write, e.g. on crash-recovery reopen.
+    pub fn verify_chain(&self) -> Result<(), LedgerError> {
+        let mut previous_hash = GENESIS_HASH.to_string();
+        for event in self.load_events()? {
+            if event.previous_hash != previous_hash {
+                return Err(LedgerError::ChainBroken(event.sequence));
+            }
+            let expected = compute_hash(&previous_hash, &event.payload);
+            if expected != event.hash {
+                return Err(LedgerError::ChainBroken(event.sequence));
+            }
+            previous_hash = event.hash;
         }
         Ok(())
     }
@@ -319,5 +551,86 @@ mod tests {
             graph.erase("nope"),
             Err(LedgerError::UnknownNode("nope".to_string()))
         );
+    }
+
+    /// Returns a unique tempfile path for a fresh on-disk SQLite DB; the caller is responsible
+    /// for removing it once the test is done with it.
+    fn temp_db_path(name: &str) -> std::path::PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("liminal-ledger-test-{name}-{unique}.db"))
+    }
+
+    #[test]
+    fn migration_creates_events_and_schema_migrations_tables_on_empty_db() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?1")
+            .unwrap();
+        assert!(stmt.exists(["events"]).unwrap());
+        assert!(stmt.exists(["schema_migrations"]).unwrap());
+
+        let version: i64 = conn
+            .query_row("SELECT version FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn sqlite_ledger_survives_close_and_reopen() {
+        let path = temp_db_path("reopen");
+
+        {
+            let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+            ledger.append_observation("obs_1", "wifi", 0).unwrap();
+            ledger
+                .append_observation("obs_2", "wifi", 1_000_000)
+                .unwrap();
+            ledger.append_belief("belief_1", "wifi", 1_000_100).unwrap();
+            assert!(ledger.verify_chain().is_ok());
+            // `ledger` (and its rusqlite::Connection) is dropped here, closing the file.
+        }
+
+        let reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
+        assert!(reopened.verify_chain().is_ok());
+        assert_eq!(reopened.events().unwrap().len(), 3);
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_detects_corrupted_chain_link_on_reopen() {
+        let path = temp_db_path("corrupt");
+
+        {
+            let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+            ledger.append_observation("obs_1", "wifi", 0).unwrap();
+            ledger
+                .append_observation("obs_2", "wifi", 1_000_000)
+                .unwrap();
+            ledger.append_belief("belief_1", "wifi", 1_000_100).unwrap();
+        }
+
+        // Simulate a torn/corrupted write (§88 crash recovery) by directly mutating the last
+        // row's hash via raw SQL, bypassing the ledger API entirely.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute(
+                "UPDATE events SET hash = 'corrupted' WHERE sequence = (SELECT MAX(sequence) FROM events)",
+                [],
+            )
+            .unwrap();
+        }
+
+        let reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
+        assert_eq!(reopened.verify_chain(), Err(LedgerError::ChainBroken(2)));
+
+        std::fs::remove_file(&path).unwrap();
     }
 }

@@ -54,8 +54,15 @@
       "id": "belief-bridges-sensor-gap",
       "file": "crates/liminal-ledger/src/lib.rs",
       "invariant": "Belief can never be recorded for a stream across an unacknowledged sensor outage.",
-      "find": "        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {\n            return Err(LedgerError::SensorGapNotAcknowledged(stream_id.to_string()));\n        }",
-      "replace": "        if false {\n            return Err(LedgerError::SensorGapNotAcknowledged(stream_id.to_string()));\n        }"
+      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+    },
+    {
+      "id": "sqlite-ledger-accepts-corrupted-chain-on-reopen",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "SqliteLedger::verify_chain must never silently accept a corrupted/torn hash on reopen -- a stored event whose hash does not match its recomputed hash must always be reported as a broken chain.",
+      "find": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if expected != event.hash {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }",
+      "replace": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if false {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }"
     }
   ]
 }
