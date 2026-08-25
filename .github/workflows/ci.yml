@@ -1,0 +1,68 @@
+# full-reign CI -- Rust. Two jobs on purpose: the mutation guard is
+# meaningless unless the unmutated suite is already green, so it is gated on
+# `deterministic`.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic:
+    name: Tests, coverage, docs
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run the suite with coverage
+        run: cargo llvm-cov --workspace --lcov --output-path target/lcov.info
+
+      - name: Per-module floor for critical modules
+        run: >-
+          python3 checks/coverage_gate.py
+          --manifest checks/mutations.json --report target/lcov.info
+
+      - name: Documentation gate
+        run: |
+          python3 checks/docs_gate.py --root . README.md
+          python3 checks/docs_gate.py --root . --min-diagrams 1 docs/ARCHITECTURE.md
+
+  mutation:
+    name: Mutation guard
+    needs: deterministic
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # Deliberately break each invariant and require the suite to catch it.
+      # --assert-min is a RATCHET: raise it as invariants are added. Lowering
+      # it is a STOP-list action -- open a PR and say why.
+      #
+      # The guard re-proves the unmutated suite is green before mutating.
+      - name: Break each invariant and require the suite to catch it
+        run: >-
+          python3 checks/mutation_guard.py
+          --manifest checks/mutations.json
+          --assert-min 7
