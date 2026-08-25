@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package liminal;
+
+// Message envelope wrapping every message on the `liminald` IPC spine.
+// Master plan reference: LIMINAL_MASTER_PLAN.md §15 (IPC).
+message Envelope {
+  uint32 schema_version = 1;
+  string message_id = 2;
+  string sensor_stream_id = 3;
+  uint64 monotonic_sequence = 4;
+  int64 captured_at_utc_us = 5;
+  int64 captured_at_mono_ns = 6;
+  bytes payload = 7;
+}
