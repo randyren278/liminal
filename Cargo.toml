@@ -5,6 +5,7 @@ members = [
     "crates/liminal-policy",
     "crates/liminal-ledger",
     "crates/liminal-memory",
+    "crates/liminal-ipc",
 ]
 
 [workspace.package]
