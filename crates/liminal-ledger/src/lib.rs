@@ -488,6 +488,28 @@ mod tests {
     }
 
     #[test]
+    fn chain_detects_broken_previous_hash_link() {
+        let mut ledger = Ledger::new(5_000_000);
+        ledger.append_observation("obs_1", "wifi", 0);
+        ledger.append_belief("belief_1", "wifi", 100).unwrap();
+        // Simulate a torn write that leaves a stored previous_hash pointing at the wrong
+        // predecessor, without touching the payload/hash themselves.
+        ledger.events[1].previous_hash = "tampered".to_string();
+        assert_eq!(ledger.verify_chain(), Err(LedgerError::ChainBroken(1)));
+    }
+
+    #[test]
+    fn ledger_events_returns_all_appended_events_in_order() {
+        let mut ledger = Ledger::new(5_000_000);
+        ledger.append_observation("obs_1", "wifi", 0);
+        ledger.append_belief("belief_1", "wifi", 100).unwrap();
+        let events = ledger.events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, "observation");
+        assert_eq!(events[1].kind, "belief");
+    }
+
+    #[test]
     fn belief_rejected_across_unacknowledged_sensor_gap() {
         let mut ledger = Ledger::new(5_000_000);
         ledger.append_observation("obs_1", "wifi", 0);
@@ -551,6 +573,13 @@ mod tests {
             graph.erase("nope"),
             Err(LedgerError::UnknownNode("nope".to_string()))
         );
+    }
+
+    #[test]
+    fn provenance_graph_default_creates_an_empty_graph() {
+        let graph = ProvenanceGraph::default();
+        assert_eq!(graph.is_erased("anything"), None);
+        assert_eq!(graph.is_invalidated("anything"), None);
     }
 
     /// Returns a unique tempfile path for a fresh on-disk SQLite DB; the caller is responsible
@@ -630,6 +659,145 @@ mod tests {
 
         let reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
         assert_eq!(reopened.verify_chain(), Err(LedgerError::ChainBroken(2)));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_verify_chain_detects_broken_previous_hash_link() {
+        let path = temp_db_path("broken-prev");
+
+        {
+            let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+            ledger.append_observation("obs_1", "wifi", 0).unwrap();
+            ledger.append_belief("belief_1", "wifi", 100).unwrap();
+        }
+
+        // Simulate a torn write that leaves a stored previous_hash pointing at the wrong
+        // predecessor, without touching the payload/hash themselves.
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute(
+                "UPDATE events SET previous_hash = 'tampered' WHERE sequence = 1",
+                [],
+            )
+            .unwrap();
+        }
+
+        let reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
+        assert_eq!(reopened.verify_chain(), Err(LedgerError::ChainBroken(1)));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_records_sensor_gap_and_rejects_belief_until_acknowledged() {
+        let path = temp_db_path("gap-live");
+        let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+
+        ledger.append_observation("obs_1", "wifi", 0).unwrap();
+        // 20s gap, threshold is 5s.
+        ledger
+            .append_observation("obs_2", "wifi", 20_000_000)
+            .unwrap();
+
+        let err = ledger
+            .append_belief("belief_1", "wifi", 20_000_100)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            LedgerError::SensorGapNotAcknowledged("wifi".to_string())
+        );
+
+        ledger
+            .record_sensor_gap("gap_1", "wifi", 20_000_000)
+            .unwrap();
+        assert!(ledger.append_belief("belief_1", "wifi", 20_000_100).is_ok());
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_reconstructs_gap_state_and_sensor_gap_kind_on_reopen() {
+        let path = temp_db_path("gap-reopen");
+
+        {
+            let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+            ledger.append_observation("obs_1", "wifi", 0).unwrap();
+            ledger
+                .append_observation("obs_2", "wifi", 20_000_000)
+                .unwrap();
+            ledger
+                .record_sensor_gap("gap_1", "wifi", 20_000_000)
+                .unwrap();
+            ledger
+                .append_belief("belief_1", "wifi", 20_000_100)
+                .unwrap();
+            // A second, unacknowledged gap right before shutdown: reopen must still require
+            // acknowledgment rather than silently trusting the pre-shutdown ack.
+            ledger
+                .append_observation("obs_3", "wifi", 50_000_000)
+                .unwrap();
+        }
+
+        let mut reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
+        let err = reopened
+            .append_belief("belief_2", "wifi", 50_000_100)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            LedgerError::SensorGapNotAcknowledged("wifi".to_string())
+        );
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_open_rejects_a_file_that_is_not_a_valid_sqlite_database() {
+        let path = temp_db_path("corrupt-file");
+        std::fs::write(&path, b"not a sqlite database").unwrap();
+
+        let result = SqliteLedger::open(&path, 5_000_000);
+        assert!(matches!(result, Err(LedgerError::Database(_))));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn migrate_fails_when_schema_migrations_table_has_incompatible_schema() {
+        let path = temp_db_path("bad-schema");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch("CREATE TABLE schema_migrations (not_version INTEGER PRIMARY KEY);")
+                .unwrap();
+        }
+
+        // The pre-existing table has no `version` column, so the migration's own INSERT
+        // fails once `CREATE TABLE IF NOT EXISTS` finds the table already present.
+        let result = SqliteLedger::open(&path, 5_000_000);
+        assert!(matches!(result, Err(LedgerError::Database(_))));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn sqlite_ledger_operations_surface_errors_when_events_table_is_missing() {
+        let path = temp_db_path("missing-table");
+        let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute("DROP TABLE events", []).unwrap();
+        }
+
+        assert!(matches!(
+            ledger.events().unwrap_err(),
+            LedgerError::Database(_)
+        ));
+        assert!(matches!(
+            ledger.append_observation("obs_1", "wifi", 0).unwrap_err(),
+            LedgerError::Database(_)
+        ));
 
         std::fs::remove_file(&path).unwrap();
     }
