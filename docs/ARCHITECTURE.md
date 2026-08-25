@@ -13,45 +13,70 @@ raw camera frames and raw microphone PCM never cross that boundary.
 
 ```mermaid
 flowchart TB
-    subgraph Swift["Liminal.app (Swift)"]
+    subgraph Swift["Liminal.app (Swift, not yet built)"]
         Sensors["Camera / Mic / Wi-Fi / BLE"]
         Extract["Feature extraction"]
     end
     subgraph Rust["liminald (Rust)"]
-        Ledger["liminal-ledger: hash-chain events, erase cascade"]
-        Policy["liminal-policy: pseudonymization, privacy audit, space anchor"]
-        Schema["liminal-schema: epistemic layers, agent-role boundary"]
+        IPC["liminal-ipc: wire envelope, schema-version validation"]
+        Ledger["liminal-ledger: hash-chain events (in-memory + SQLite), erase cascade"]
+        Policy["liminal-policy: pseudonymization, privacy audit, space anchor, retention"]
+        Schema["liminal-schema: epistemic layers, agent-role boundary, sensorium profile"]
+        Memory["liminal-memory: occupancy segmentation"]
     end
-    TUI["liminal TUI/CLI (Rust)"]
+    CLI["liminal-cli: privacy audit, event browsing, provenance drilldown"]
 
     Sensors --> Extract
-    Extract -->|"derived observations only, Unix socket + protobuf"| Ledger
+    Extract -->|"derived observations only, Unix socket + protobuf"| IPC
+    IPC --> Ledger
     Ledger --> Policy
     Ledger --> Schema
-    Ledger --> TUI
+    Ledger --> Memory
+    Ledger --> CLI
 ```
 
 ## What exists today
 
-Only the canonical-state core exists so far — the part of the system that
-has no dependency on live camera/microphone/Wi-Fi/Bluetooth hardware, and is
-therefore fully unit-testable in CI without a Mac's sensors:
+The canonical-state core and its wire contract exist so far — the part of
+the system that has no dependency on live camera/microphone/Wi-Fi/Bluetooth
+hardware, and is therefore fully unit-testable in CI without a Mac's
+sensors:
 
 - **`crates/liminal-schema`** — the four epistemic layers (OBSERVED,
   INFERRED, INTERPRETED, IMAGINED) and the hard boundary between them: no
   IMAGINED artifact may back a factual claim, and each agent role
   (Archivist, Ethnographer, Skeptic, Cartographer, Poet) can only author
-  claims in its permitted layer.
+  claims in its permitted layer. Also carries `SensoriumProfile` (§22): the
+  data shape a future Swift probe will report hardware capabilities into.
+- **`crates/liminal-memory`** — Observation → Event segmentation (§58):
+  hysteresis-based occupancy transitions with gap merging, over a synthetic
+  probability time series. Not yet wired to a live belief stream.
 - **`crates/liminal-policy`** — HMAC-SHA256 pseudonymization for BLE
   identifiers, Wi-Fi Mode A sanitization (aggregate features only, no
   SSID/BSSID field exists on the output type), a recursive privacy-audit
-  scanner for forbidden keys, and space-anchor divergence handling that
-  caps belief confidence when the laptop appears to have moved.
+  scanner for forbidden keys, space-anchor divergence handling that caps
+  belief confidence when the laptop appears to have moved, and the §85
+  retention-tier eligibility function (pure decision logic, not wired to an
+  actual deletion scheduler yet).
 - **`crates/liminal-ledger`** — an append-only, BLAKE3 hash-chained event
-  log; a provenance graph that cascades invalidation from an erased source
-  to every downstream Event/Episode/Pattern/Interpretation; and a
-  sensor-gap guard that refuses to record belief across an unacknowledged
-  sensor outage.
+  log with two implementations: an in-memory `Ledger` (the original) and a
+  SQLite-backed `SqliteLedger` (persisted, with a migration and
+  crash-recovery test). A separate in-memory `ProvenanceGraph` cascades
+  invalidation from an erased source to every downstream
+  Event/Episode/Pattern/Interpretation; it is not connected to
+  `SqliteLedger`'s persisted storage (see "Known architectural gap" below).
+  A sensor-gap guard refuses to record belief across an unacknowledged
+  sensor outage, on both ledger implementations.
+- **`crates/liminal-ipc`** — the Swift↔Rust wire contract: a Protocol
+  Buffers envelope (§15) matching the exact field list the plan specifies,
+  with schema-version rejection (§119) so a mismatched build can't silently
+  desync. No transport (reconnect, dedup, backpressure) yet — that's a
+  `liminald` runtime concern, not this crate's.
+- **`crates/liminal-cli`** — the `liminal` binary's data-layer-only
+  subcommands: `privacy audit` (scans a `SqliteLedger`'s stored records for
+  forbidden keys), `events list`/`show`, and `explain <id>` (walks
+  `SqliteLedger`'s `previous_hash` chain back to genesis — see the gap note
+  below for why this doesn't use `ProvenanceGraph`).
 
 Everything else in the master plan — Sensorium discovery, the Swift sensor
 organs, calibration, fusion, the Spectral Canvas, the TUI, field-note
@@ -59,7 +84,31 @@ agents — is `PLANNED`. See [`ROADMAP.md`](../ROADMAP.md) for the proposed
 build order and [`AUDIT.md`](../AUDIT.md) for the full feature-by-feature
 status.
 
-## Why these three crates first
+## Known architectural gap: two disconnected provenance mechanisms
+
+`liminal-ledger` currently has two ways to answer "what does this claim
+depend on":
+
+1. `ProvenanceGraph` — an explicit dependency DAG (`add_node(id,
+   depends_on)`) with cascading erase-invalidation. Built for and only
+   exercised by that crate's own tests; nothing persists a `depends_on`
+   edge into SQLite.
+2. `SqliteLedger`'s `previous_hash` chain — every persisted `Event` already
+   links to its predecessor. `liminal-cli`'s `explain <id>` walks this
+   chain, which is real persisted data, but it's a linear history chain,
+   not the branching dependency graph `ProvenanceGraph` models (an Event
+   can only have one predecessor in the chain; the plan's real provenance
+   model, §62, is Observation → Event → Episode → Pattern →
+   Interpretation, a many-to-one fan-in `ProvenanceGraph` is built for).
+
+These are not yet reconciled. Building Episodes/Patterns/Interpretations
+(out of scope for every task built so far) will need one coherent,
+persisted provenance mechanism — deciding whether that's a
+`depends_on`-edges table replacing `ProvenanceGraph`, or something else, is
+a design decision for whoever picks up that work, not something to guess at
+here.
+
+## Why these crates first
 
 The master plan's fixed development order (§177) starts with the
 constitution and sensor discovery, but the constitution's actual
@@ -74,7 +123,7 @@ inspection.
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 7
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 9
 python3 checks/coverage_gate.py --manifest checks/mutations.json --report target/lcov.info
 ```
 

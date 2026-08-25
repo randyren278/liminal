@@ -10,6 +10,19 @@ entire implementation is the hardware-independent canonical-state core
 described in `docs/ARCHITECTURE.md`. Nothing from the Swift/sensor/GUI side
 of the master plan exists yet.
 
+> **Update (post-Phase-3):** the six items below are this audit's original
+> Phase-2 snapshot, left as written. ROADMAP.md's approved items have since
+> been built: `liminal-memory`, `liminal-ipc`, `liminal-cli`, SQLite-backed
+> ledger persistence, retention policy, and `SensoriumProfile` all now
+> exist. Two of the specific gaps noted below are now partially closed —
+> `liminal-ledger`'s "no persistence" gap (SQLite is now implemented, though
+> `ProvenanceGraph` remains disconnected from it — see
+> `docs/ARCHITECTURE.md`'s "Known architectural gap" section) and
+> `liminal-policy`'s "no CLI surface" gap (`liminal privacy audit` now
+> exists in `crates/liminal-cli`). This audit is not being rewritten to
+> pretend it always described the current state — a fresh audit against the
+> new crates is future work, not this one retrofitted.
+
 ## `crates/liminal-schema` — epistemic layers & agent-role boundary
 
 | Check | Result |

@@ -14,8 +14,9 @@ is actually built, right now, against that plan.
 This repository is early. Nothing here talks to a camera, microphone,
 Wi-Fi radio, or Bluetooth radio yet. What exists is the hardware-independent
 canonical-state layer the rest of the system will be built on: the Rust
-crates that own privacy policy, epistemic-layer boundaries, and the
-append-only event ledger.
+crates that own privacy policy, epistemic-layer boundaries, the
+append-only event ledger, the wire contract to a future Swift sensor app,
+and a CLI to inspect all of it.
 
 Per the plan's own [README Claims Policy](LIMINAL_MASTER_PLAN.md#145-readme-claims-policy),
 every capability below is labeled `WORKING`, `EXPERIMENTAL`, or `PLANNED` —
@@ -24,19 +25,29 @@ never claimed beyond what is tested.
 | Capability | Status | Evidence |
 |---|---|---|
 | Epistemic layer boundary (OBSERVED/INFERRED/INTERPRETED/IMAGINED, agent-role write boundary) | WORKING | `crates/liminal-schema`, mutation-guarded |
+| Sensorium profile data model (sensor states, capability schema) | WORKING | `crates/liminal-schema/src/sensorium.rs` |
+| Occupancy event segmentation (hysteresis + gap merging) | WORKING | `crates/liminal-memory` |
 | BLE/Wi-Fi pseudonymization + Mode A privacy sanitization | WORKING | `crates/liminal-policy`, mutation-guarded |
 | Space-anchor invalidation (confidence downgrade on divergence) | WORKING | `crates/liminal-policy`, mutation-guarded |
+| Retention policy (§85 tiers, pure eligibility function) | WORKING | `crates/liminal-policy/src/retention.rs`, mutation-guarded |
 | Append-only event ledger with hash-chain integrity | WORKING | `crates/liminal-ledger` |
 | Erase-cascade (privacy delete invalidates dependents) | WORKING | `crates/liminal-ledger`, mutation-guarded |
 | Sensor-gap acknowledgment (belief can't bridge an outage) | WORKING | `crates/liminal-ledger`, mutation-guarded |
+| SQLite-backed ledger persistence (migration, crash recovery) | WORKING | `crates/liminal-ledger` (`SqliteLedger`), mutation-guarded |
+| IPC wire envelope (Swift↔Rust contract) + schema-version validation | WORKING | `crates/liminal-ipc` |
+| CLI: privacy audit, event browsing, provenance drilldown | WORKING | `crates/liminal-cli` (`liminal` binary) |
 | Sensorium discovery, camera/audio/Wi-Fi/BLE organs, fusion, TUI, native app | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
 ## Repository layout
 
 ```text
-crates/liminal-schema/    epistemic layers, claims, agent-role write boundary
-crates/liminal-policy/    HMAC pseudonymization, Wi-Fi Mode A sanitization, space-anchor policy
-crates/liminal-ledger/    hash-chain event log, provenance graph, erase cascade, sensor-gap guard
+crates/liminal-schema/    epistemic layers, claims, agent-role write boundary, sensorium profile model
+crates/liminal-memory/    occupancy event segmentation (hysteresis, gap merging)
+crates/liminal-policy/    HMAC pseudonymization, Wi-Fi Mode A sanitization, space-anchor policy, retention tiers
+crates/liminal-ledger/    hash-chain event log (in-memory + SQLite-backed), provenance graph, erase cascade, sensor-gap guard
+crates/liminal-ipc/       Protocol Buffers wire envelope + schema-version validation
+crates/liminal-cli/       `liminal` binary: privacy audit, event browsing, provenance drilldown
+proto/                    liminal.proto — the IPC wire contract
 checks/                   mutation guard, coverage gate, docs gate (see docs/ARCHITECTURE.md)
 ```
 
@@ -45,7 +56,7 @@ checks/                   mutation guard, coverage gate, docs gate (see docs/ARC
 ```bash
 cargo test --workspace              # unit tests
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 7
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 9
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit
