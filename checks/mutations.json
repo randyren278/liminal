@@ -1,0 +1,61 @@
+{
+  "test_command": "cargo test --workspace",
+  "timeout_seconds": 120,
+  "coverage_floor": 95.0,
+  "critical_modules": [
+    "crates/liminal-schema/src/lib.rs",
+    "crates/liminal-policy/src/lib.rs",
+    "crates/liminal-ledger/src/lib.rs"
+  ],
+  "mutations": [
+    {
+      "id": "imagined-evidence-not-backing-fact",
+      "file": "crates/liminal-schema/src/lib.rs",
+      "invariant": "IMAGINED evidence can never back a non-IMAGINED (fact) claim.",
+      "find": "        if layer != EpistemicLayer::Imagined {",
+      "replace": "        if false {"
+    },
+    {
+      "id": "interpretation-agent-role-boundary-bypassed",
+      "file": "crates/liminal-schema/src/lib.rs",
+      "invariant": "An agent role (e.g. the interpretation/Ethnographer agent) can only author claims in its permitted epistemic layers -- it can never write an OBSERVED claim.",
+      "find": "    if !role.allowed_layers().contains(&layer) {",
+      "replace": "    if false && !role.allowed_layers().contains(&layer) {"
+    },
+    {
+      "id": "ble-pseudonym-loses-hmac",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "A BLE peripheral identifier is always transformed through HMAC before persistence -- never stored as (or trivially reversible to) the raw identifier.",
+      "find": "pub fn pseudonymize_ble(local_key: &[u8], peripheral_identifier: &str) -> String {\n    pseudonymize(local_key, peripheral_identifier, \"ble\")\n}",
+      "replace": "pub fn pseudonymize_ble(local_key: &[u8], peripheral_identifier: &str) -> String {\n    let _ = local_key;\n    format!(\"ble:{peripheral_identifier}\")\n}"
+    },
+    {
+      "id": "wifi-mode-a-leaks-ssid",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "A Wi-Fi Mode A observation never carries a raw SSID/BSSID field -- only anonymous aggregate features.",
+      "find": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n}",
+      "replace": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n    pub ssid: String,\n}"
+    },
+    {
+      "id": "space-anchor-invalidation-ignored",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "When sensor divergence crosses the space-anchor threshold, the anchor is always reported Invalidated -- movement is never silently ignored.",
+      "find": "        if divergence_score >= self.threshold {",
+      "replace": "        if false && divergence_score >= self.threshold {"
+    },
+    {
+      "id": "erase-cascade-invalidation-skipped",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "Erasing a source Observation always invalidates every downstream Event/Episode/Pattern/Interpretation derived from it.",
+      "find": "                    .any(|dep| invalidated_ids.contains(dep))\n                {\n                    node.invalidated = true;",
+      "replace": "                    .any(|dep| invalidated_ids.contains(dep))\n                {\n                    node.invalidated = false;"
+    },
+    {
+      "id": "belief-bridges-sensor-gap",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "Belief can never be recorded for a stream across an unacknowledged sensor outage.",
+      "find": "        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {\n            return Err(LedgerError::SensorGapNotAcknowledged(stream_id.to_string()));\n        }",
+      "replace": "        if false {\n            return Err(LedgerError::SensorGapNotAcknowledged(stream_id.to_string()));\n        }"
+    }
+  ]
+}
