@@ -19,3 +19,4 @@ thiserror = "1"
 blake3 = "1"
 hmac = "0.12"
 sha2 = "0.10"
+rusqlite = { version = "0.40", features = ["bundled"] }
