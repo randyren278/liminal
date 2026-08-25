@@ -6,6 +6,7 @@ members = [
     "crates/liminal-ledger",
     "crates/liminal-memory",
     "crates/liminal-ipc",
+    "crates/liminal-cli",
 ]
 
 [workspace.package]
@@ -20,3 +21,4 @@ blake3 = "1"
 hmac = "0.12"
 sha2 = "0.10"
 rusqlite = { version = "0.40", features = ["bundled"] }
+clap = { version = "4", features = ["derive"] }
