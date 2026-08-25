@@ -5,6 +5,7 @@
   "critical_modules": [
     "crates/liminal-schema/src/lib.rs",
     "crates/liminal-policy/src/lib.rs",
+    "crates/liminal-policy/src/retention.rs",
     "crates/liminal-ledger/src/lib.rs"
   ],
   "mutations": [
@@ -63,6 +64,13 @@
       "invariant": "SqliteLedger::verify_chain must never silently accept a corrupted/torn hash on reopen -- a stored event whose hash does not match its recomputed hash must always be reported as a broken chain.",
       "find": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if expected != event.hash {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }",
       "replace": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if false {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }"
+    },
+    {
+      "id": "retention-past-tier-never-deleted",
+      "file": "crates/liminal-policy/src/retention.rs",
+      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the §85 tier.",
+      "find": "    now_us - recorded_at_us >= cutoff_us",
+      "replace": "    false"
     }
   ]
 }
