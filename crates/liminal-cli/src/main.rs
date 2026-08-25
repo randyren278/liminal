@@ -159,11 +159,19 @@ fn run_privacy_audit(db: &Path) -> ExitCode {
     }
 }
 
+fn format_event_list_line(event: &Event) -> String {
+    let ts_us = event.payload.get("ts_us").and_then(|v| v.as_i64());
+    match ts_us {
+        Some(ts) => format!("{}\t{}\t{}\t{}", event.id, event.kind, event.sequence, ts),
+        None => format!("{}\t{}\t{}", event.id, event.kind, event.sequence),
+    }
+}
+
 fn run_events_list(db: &Path) -> ExitCode {
     match list_events(db) {
         Ok(events) => {
             for event in &events {
-                println!("{}\t{}\t{}", event.id, event.kind, event.sequence);
+                println!("{}", format_event_list_line(event));
             }
             ExitCode::SUCCESS
         }
@@ -342,6 +350,23 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].id, "obs_1");
         assert_eq!(events[1].id, "obs_2");
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn events_list_line_includes_the_timestamp() {
+        let path = temp_db_path("list-ts");
+        {
+            let mut ledger = SqliteLedger::open(&path, i64::MAX).unwrap();
+            ledger
+                .append_observation("obs_1", "wifi", 1_000_000)
+                .unwrap();
+        }
+
+        let events = list_events(&path).unwrap();
+        let line = format_event_list_line(&events[0]);
+        assert_eq!(line, "obs_1\tobservation\t0\t1000000");
 
         std::fs::remove_file(&path).unwrap();
     }
