@@ -23,6 +23,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
       - name: Install Rust
         run: rustup component add llvm-tools-preview
 
@@ -55,6 +64,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       # Deliberately break each invariant and require the suite to catch it.
       # --assert-min is a RATCHET: raise it as invariants are added. Lowering
