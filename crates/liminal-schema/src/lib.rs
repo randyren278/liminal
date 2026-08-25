@@ -5,6 +5,11 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod sensorium;
+pub use sensorium::{
+    AudioProfile, BluetoothProfile, CameraProfile, SensorState, SensoriumProfile, WifiProfile,
+};
+
 /// The four epistemic layers. Every piece of Liminal knowledge belongs to exactly one.
 /// §8 hard boundary: no IMAGINED artifact may become evidence for OBSERVED, INFERRED, or
 /// INTERPRETED claims.
