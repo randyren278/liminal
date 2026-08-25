@@ -7,6 +7,9 @@ use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
 
+mod retention;
+pub use retention::{eligible_for_deletion, RecordKind, RetentionPolicy};
+
 type HmacSha256 = Hmac<Sha256>;
 
 /// HMAC-SHA256(local_key, identifier), hex-encoded, prefixed for the given namespace.
