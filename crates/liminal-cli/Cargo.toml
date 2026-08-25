@@ -1,0 +1,17 @@
+[package]
+name = "liminal-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "liminal"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+clap.workspace = true
+liminal-ledger = { path = "../liminal-ledger" }
+liminal-policy = { path = "../liminal-policy" }
+
+[dev-dependencies]
+rusqlite.workspace = true
