@@ -154,9 +154,14 @@ the user rather than unilaterally:
    pattern when no real data exists yet. Belief-latency budget (§93, p95 <
    500ms) not yet measured — there's no belief frame to time until fusion
    exists.
-5. **Passive acoustic organ** — `AVAudioEngine` tap, §27 features (RMS,
-   spectral centroid/rolloff/flatness, ZCR, VAD probability), same
-   envelope/socket path as item 2.
+5. **DONE.** Passive acoustic organ — `AVAudioEngine` tap, §27 features
+   (RMS, spectral centroid/rolloff/flatness, ZCR, VAD probability), same
+   envelope/socket path as item 2. Real DSP bug caught and fixed by its own
+   test: an unwindowed FFT biased the spectral centroid by >1.5kHz via
+   sidelobe leakage; fixed with a Hann window, verified against synthetic
+   tone/noise/silence buffers (23 tests). `voice_activity_probability` is
+   an explicit heuristic, documented as such — not a trained model, and
+   §28 doesn't require one. EXPERIMENTAL until a human runs it live.
 6. **Wi-Fi + Bluetooth organs** — live `CWWiFiClient` scanning (Mode A
    aggregate only, matching `liminal-policy`'s existing sanitization) and
    `CBCentralManager` scanning with the existing HMAC pseudonymization

@@ -20,8 +20,8 @@ only this diagram's shape changed, not the privacy posture.
 flowchart TB
     subgraph Swift["Liminal capture daemon (Swift, headless, no window)"]
         Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
-        Sensors["liminal-capture: camera + 2D pose (built, EXPERIMENTAL -- unverified by a human yet)"]
-        Extract["Audio/Wi-Fi/BLE feature extraction (not built)"]
+        Sensors["liminal-capture: camera + 2D pose, mic + acoustic features (built, EXPERIMENTAL -- unverified by a human yet)"]
+        Extract["Wi-Fi/BLE feature extraction (not built)"]
     end
     subgraph Rust["liminald (Rust) -- ingest-only skeleton, built"]
         IPC["liminal-ipc: wire envelope, schema-version validation"]
@@ -124,19 +124,34 @@ so far:
   it never opens an `AVCaptureSession`, taps microphone audio, scans Wi-Fi
   networks, or starts a BLE scan, so it requests zero permission prompts.
   See "TCC and unsigned CLI binaries" below before building anything past
-  this probe. The package also has `liminal-capture` (ROADMAP item 2, §120
-  Vision Organ): requests camera authorization explicitly (§90), then uses
-  `VisionCaptureCoordinator` (`AVCaptureSession` + `VNDetectHumanBodyPoseRequest`)
-  to extract 2D body pose per frame and emit it as a `liminal-ipc` envelope —
-  over the Unix socket at `/tmp/liminal-$UID/core.sock` if something is
-  listening (nothing is yet — that's item 3), else printed to stdout. Zero
-  raw frames are ever written to disk. The pose-extraction and envelope/
-  framing logic is unit-tested (including a real Unix-socket round-trip
-  test using an in-process POSIX listener); the actual camera capture path
-  is EXPERIMENTAL — it builds and the logic around it is tested, but a
-  human has not yet run it and confirmed real pose data comes out the other
-  end, since granting the camera permission prompt requires a human present
-  at the keyboard.
+  this probe. The package also has `liminal-capture`, now covering ROADMAP
+  items 2 and 5:
+  - **Vision organ** (§120): requests camera authorization explicitly (§90),
+    then uses `VisionCaptureCoordinator` (`AVCaptureSession` +
+    `VNDetectHumanBodyPoseRequest`) to extract 2D body pose per frame.
+  - **Passive acoustic organ** (§26/§27): requests microphone authorization
+    separately (its own §90 explanation, not bundled with the camera one),
+    then `AudioCaptureCoordinator` taps the input node and aggregates ~1s
+    windows into RMS/peak/zero-crossing-rate/spectral-centroid/spectral-
+    rolloff/spectral-flatness features via a real FFT (Accelerate `vDSP`,
+    Hann-windowed — an unwindowed FFT was tried first and biased a pure
+    1000Hz tone's measured centroid to ~2555Hz via sidelobe leakage; this
+    was caught by the tone-frequency test itself, not assumed correct).
+    `voice_activity_probability` is an explicit three-factor heuristic
+    (energy + ZCR band + spectral non-flatness), not a trained model — §28
+    only permits using it to suppress active probes and inform privacy UI,
+    which is exactly the level of rigor that scope justifies (§47). No
+    MFCC anywhere, matching §27's "disabled by default" boundary.
+
+  Both organs emit `liminal-ipc` envelopes over the same Unix socket (or
+  stdout fallback) via one shared send path, and neither persists any raw
+  frame or raw continuous audio to disk. The DSP and envelope/framing logic
+  is unit-tested (23 audio tests against synthetic silence/tone/noise
+  buffers, plus a real Unix-socket round-trip test using an in-process
+  POSIX listener); the actual capture paths are EXPERIMENTAL — they build
+  and the logic around them is tested, but a human has not yet run either
+  and confirmed real data comes out the other end, since granting a TCC
+  permission prompt requires a human present at the keyboard.
 
 Everything else in the master plan — Sensorium discovery's live acceptance
 mode, the full permission shell, `liminald` (item 3), passive acoustics,
