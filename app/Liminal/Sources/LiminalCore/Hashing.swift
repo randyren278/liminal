@@ -13,6 +13,19 @@ public func sha256Hex(_ input: String, prefix: String) -> String {
     return "\(prefix):\(hex)"
 }
 
+/// HMAC-SHA256(key, message), hex-encoded, prefixed. Mirrors `liminal_policy::pseudonymize` on
+/// the Rust side exactly (same algorithm, same `prefix:hex` shape) -- master plan §36/§39: a
+/// sensor-reading identifier (BLE peripheral UUID, a future Wi-Fi AP identifier under Mode B)
+/// must be transformed through HMAC with a locally-held key before it ever leaves this function,
+/// never a plain hash (unlike `sha256Hex` above, which is for one-way machine/device identity
+/// where no shared key or cross-session stability requirement exists).
+public func hmacSha256Hex(key: Data, message: String, prefix: String) -> String {
+    let key = SymmetricKey(data: key)
+    let mac = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
+    let hex = mac.map { String(format: "%02x", $0) }.joined()
+    return "\(prefix):\(hex)"
+}
+
 /// A stable-per-machine, non-reversible identifier for this Mac. Reads `IOPlatformUUID` (a
 /// hardware-derived UUID Apple exposes for exactly this purpose) and hashes it immediately --
 /// the raw UUID is never persisted or logged.

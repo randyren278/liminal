@@ -27,4 +27,33 @@ final class HashingTests: XCTestCase {
         XCTAssertEqual(machineProfileId(), machineProfileId())
         XCTAssertTrue(machineProfileId().hasPrefix("machine:"))
     }
+
+    // MARK: - hmacSha256Hex
+
+    func testHmacSha256HexIsNotIdentityAndIsPrefixed() {
+        let key = Data("local-key".utf8)
+        let out = hmacSha256Hex(key: key, message: "AA:BB:CC:DD:EE:FF", prefix: "ble")
+        XCTAssertNotEqual(out, "AA:BB:CC:DD:EE:FF")
+        XCTAssertTrue(out.hasPrefix("ble:"))
+    }
+
+    func testHmacSha256HexIsDeterministicForTheSameKeyAndMessage() {
+        let key = Data("local-key".utf8)
+        let a = hmacSha256Hex(key: key, message: "AA:BB:CC:DD:EE:FF", prefix: "ble")
+        let b = hmacSha256Hex(key: key, message: "AA:BB:CC:DD:EE:FF", prefix: "ble")
+        XCTAssertEqual(a, b)
+    }
+
+    func testHmacSha256HexDiffersAcrossKeys() {
+        let a = hmacSha256Hex(key: Data("key-one".utf8), message: "AA:BB:CC:DD:EE:FF", prefix: "ble")
+        let b = hmacSha256Hex(key: Data("key-two".utf8), message: "AA:BB:CC:DD:EE:FF", prefix: "ble")
+        XCTAssertNotEqual(a, b)
+    }
+
+    func testHmacSha256HexProducesA64CharacterHexDigest() throws {
+        let out = hmacSha256Hex(key: Data("k".utf8), message: "m", prefix: "x")
+        let hex = try XCTUnwrap(out.split(separator: ":").last)
+        XCTAssertEqual(hex.count, 64)
+        XCTAssertTrue(hex.allSatisfy(\.isHexDigit))
+    }
 }
