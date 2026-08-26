@@ -1,0 +1,92 @@
+{
+  "test_command": "cargo test --workspace",
+  "timeout_seconds": 600,
+  "coverage_floor": 95.0,
+  "critical_modules": [
+    "crates/liminal-schema/src/lib.rs",
+    "crates/liminal-policy/src/lib.rs",
+    "crates/liminal-policy/src/retention.rs",
+    "crates/liminal-ledger/src/lib.rs",
+    "crates/liminal-memory/src/lib.rs",
+    "crates/liminal-schema/src/sensorium.rs"
+  ],
+  "mutations": [
+    {
+      "id": "imagined-evidence-not-backing-fact",
+      "file": "crates/liminal-schema/src/lib.rs",
+      "invariant": "IMAGINED evidence can never back a non-IMAGINED (fact) claim.",
+      "find": "        if layer != EpistemicLayer::Imagined {",
+      "replace": "        if false {"
+    },
+    {
+      "id": "interpretation-agent-role-boundary-bypassed",
+      "file": "crates/liminal-schema/src/lib.rs",
+      "invariant": "An agent role (e.g. the interpretation/Ethnographer agent) can only author claims in its permitted epistemic layers -- it can never write an OBSERVED claim.",
+      "find": "    if !role.allowed_layers().contains(&layer) {",
+      "replace": "    if false && !role.allowed_layers().contains(&layer) {"
+    },
+    {
+      "id": "ble-pseudonym-loses-hmac",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "A BLE peripheral identifier is always transformed through HMAC before persistence -- never stored as (or trivially reversible to) the raw identifier.",
+      "find": "pub fn pseudonymize_ble(local_key: &[u8], peripheral_identifier: &str) -> String {\n    pseudonymize(local_key, peripheral_identifier, \"ble\")\n}",
+      "replace": "pub fn pseudonymize_ble(local_key: &[u8], peripheral_identifier: &str) -> String {\n    let _ = local_key;\n    format!(\"ble:{peripheral_identifier}\")\n}"
+    },
+    {
+      "id": "wifi-mode-a-leaks-ssid",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "A Wi-Fi Mode A observation never carries a raw SSID/BSSID field -- only anonymous aggregate features.",
+      "find": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n}",
+      "replace": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n    pub ssid: String,\n}"
+    },
+    {
+      "id": "space-anchor-invalidation-ignored",
+      "file": "crates/liminal-policy/src/lib.rs",
+      "invariant": "When sensor divergence crosses the space-anchor threshold, the anchor is always reported Invalidated -- movement is never silently ignored.",
+      "find": "        if divergence_score >= self.threshold {",
+      "replace": "        if false && divergence_score >= self.threshold {"
+    },
+    {
+      "id": "erase-cascade-invalidation-skipped",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "Erasing a source Observation always invalidates every downstream Event/Episode/Pattern/Interpretation derived from it.",
+      "find": "                    .any(|dep| invalidated_ids.contains(dep))\n                {\n                    node.invalidated = true;",
+      "replace": "                    .any(|dep| invalidated_ids.contains(dep))\n                {\n                    node.invalidated = false;"
+    },
+    {
+      "id": "belief-bridges-sensor-gap",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "Belief can never be recorded for a stream across an unacknowledged sensor outage.",
+      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+    },
+    {
+      "id": "sqlite-ledger-accepts-corrupted-chain-on-reopen",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "SqliteLedger::verify_chain must never silently accept a corrupted/torn hash on reopen -- a stored event whose hash does not match its recomputed hash must always be reported as a broken chain.",
+      "find": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if expected != event.hash {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }",
+      "replace": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if false {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }"
+    },
+    {
+      "id": "retention-past-tier-never-deleted",
+      "file": "crates/liminal-policy/src/retention.rs",
+      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the \u00a785 tier.",
+      "find": "    now_us - recorded_at_us >= cutoff_us",
+      "replace": "    false"
+    },
+    {
+      "id": "sqlite-ledger-bridges-sensor-gap",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "SqliteLedger can never record belief for a stream across an unacknowledged sensor gap, mirroring the in-memory Ledger's guarantee.",
+      "find": "    /// See `Ledger::append_belief`.\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// See `Ledger::append_belief`.\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+    },
+    {
+      "id": "memory-enter-duration-boundary-not-inclusive",
+      "file": "crates/liminal-memory/src/lib.rs",
+      "invariant": "A run of samples sustained for exactly the configured enter_duration_us counts as met (inclusive boundary), matching the crate's documented boundary semantics.",
+      "find": "                    if ts - run_start >= config.enter_duration_us {",
+      "replace": "                    if ts - run_start > config.enter_duration_us {"
+    }
+  ]
+}
