@@ -103,14 +103,25 @@ so far:
   it never opens an `AVCaptureSession`, taps microphone audio, scans Wi-Fi
   networks, or starts a BLE scan, so it requests zero permission prompts.
   See "TCC and unsigned CLI binaries" below before building anything past
-  this probe.
+  this probe. The package also has `liminal-capture` (ROADMAP item 2, §120
+  Vision Organ): requests camera authorization explicitly (§90), then uses
+  `VisionCaptureCoordinator` (`AVCaptureSession` + `VNDetectHumanBodyPoseRequest`)
+  to extract 2D body pose per frame and emit it as a `liminal-ipc` envelope —
+  over the Unix socket at `/tmp/liminal-$UID/core.sock` if something is
+  listening (nothing is yet — that's item 3), else printed to stdout. Zero
+  raw frames are ever written to disk. The pose-extraction and envelope/
+  framing logic is unit-tested (including a real Unix-socket round-trip
+  test using an in-process POSIX listener); the actual camera capture path
+  is EXPERIMENTAL — it builds and the logic around it is tested, but a
+  human has not yet run it and confirmed real pose data comes out the other
+  end, since granting the camera permission prompt requires a human present
+  at the keyboard.
 
 Everything else in the master plan — Sensorium discovery's live acceptance
-mode, the full permission shell, actual sensor capture (camera Vision pose,
-audio taps, Wi-Fi/BLE scanning), calibration, fusion, the Spectral Canvas,
-the TUI, field-note agents — is `PLANNED`. See [`ROADMAP.md`](../ROADMAP.md)
-for the proposed build order and [`AUDIT.md`](../AUDIT.md) for the full
-feature-by-feature status.
+mode, the full permission shell, `liminald` (item 3), passive acoustics,
+Wi-Fi/BLE scanning (items 5-6), calibration, fusion, field-note agents — is
+`PLANNED`. See [`ROADMAP.md`](../ROADMAP.md) for the proposed build order
+and [`AUDIT.md`](../AUDIT.md) for the full feature-by-feature status.
 
 ## TCC and unsigned CLI binaries
 
