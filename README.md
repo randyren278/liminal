@@ -39,6 +39,7 @@ never claimed beyond what is tested.
 | IPC wire envelope (Swift↔Rust contract) + schema-version validation | WORKING | `crates/liminal-ipc` |
 | CLI: privacy audit, event browsing, append-order event history | WORKING | `crates/liminal-cli` (`liminal` binary) |
 | Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
+| Vision organ (`liminal-capture`): camera capture + 2D body pose extraction + IPC envelope emission, zero raw frames persisted | EXPERIMENTAL — builds and unit-tests clean, but real-camera capture has not yet been confirmed by a human running it and granting the permission prompt | `app/Liminal` (`liminal-capture` binary) |
 | `liminal-tui` mode skeleton + real terminal image/video rendering (Kitty/Sixel via `ratatui-image`) | WORKING | `crates/liminal-tui` |
 | Camera/audio/Wi-Fi/BLE capture organs, `liminald`, fusion | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
