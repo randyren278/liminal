@@ -31,7 +31,7 @@ flowchart TB
         Memory["liminal-memory: occupancy segmentation"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
-    TUI["liminal-tui: PRIMARY interface -- ratatui + ratatui-image, real video/bitmap rendering (not built)"]
+    TUI["liminal-tui: PRIMARY interface -- mode skeleton + real bitmap render built; wiring to Ledger not done"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors --> Extract
@@ -86,6 +86,13 @@ so far:
   integrity view, explicitly NOT a provenance/derivation query; it was
   originally named `explain` and framed as §62 provenance drilldown, then
   renamed after review caught that mismatch — see the gap note below).
+- **`crates/liminal-tui`** — the primary interface (2026-08-26 pivot, above):
+  a mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE, §72) with
+  `ratatui-image` proven to render real animated bitmap output over the
+  terminal's graphics protocol (Kitty/Sixel, auto-detected; halfblock
+  fallback otherwise) — the demo panel is an explicitly-labeled synthetic
+  pattern, not a sensor feed, per §146's Demo Honesty rule. Not yet wired
+  to `liminal-ledger` or any real sensor data.
 - **`app/Liminal`** — a Swift package: `LiminalCore` (a testable library —
   the `SensoriumProfile`/`SensorState` Codable types mirroring
   `liminal-schema`'s Rust types field-for-field, plus hashing) and

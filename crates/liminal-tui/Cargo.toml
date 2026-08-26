@@ -1,0 +1,10 @@
+[package]
+name = "liminal-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+ratatui-image = "4"
+image = "0.25"
