@@ -33,6 +33,14 @@ do {
 var sequence: UInt64 = 0
 let sequenceLock = NSLock()
 
+// Keep every live organ strongly referenced for the lifetime of the daemon. The capture and
+// audio coordinators own the delegate/tap callbacks, while the Bluetooth coordinator owns the
+// CBCentralManager delegate. Creating them only inside the authorization blocks would make the
+// process report "running" and then silently stop delivering callbacks when those scopes ended.
+var visionCoordinator: VisionCaptureCoordinator?
+var audioCoordinator: AudioCaptureCoordinator?
+var bluetoothCoordinator: BluetoothScanCoordinator?
+
 /// Shared by both organs: builds and sends one envelope, falling back to stdout on any send
 /// failure (including "never connected in the first place").
 func sendFeatures(streamId: String, payload: Data) {
@@ -87,13 +95,14 @@ if requestAuthorization(
         + "never saved to disk.",
 ) {
     print("liminal-capture: camera access granted.")
-    let visionCoordinator = VisionCaptureCoordinator { observation in
+    let coordinator = VisionCaptureCoordinator { observation in
         guard let payload = try? encodePoseObservation(observation) else { return }
         sendFeatures(streamId: "camera", payload: payload)
     }
+    visionCoordinator = coordinator
     do {
-        try visionCoordinator.configure()
-        visionCoordinator.start()
+        try coordinator.configure()
+        coordinator.start()
         print("liminal-capture: Vision organ running.")
     } catch {
         print("liminal-capture: failed to configure camera session: \(error)")
@@ -111,12 +120,13 @@ if requestAuthorization(
         + "recorded, transcribed, or saved to disk -- only derived numbers leave this process.",
 ) {
     print("liminal-capture: microphone access granted.")
-    let audioCoordinator = AudioCaptureCoordinator { features in
+    let coordinator = AudioCaptureCoordinator { features in
         guard let payload = try? JSONEncoder().encode(features) else { return }
         sendFeatures(streamId: "microphone", payload: payload)
     }
+    audioCoordinator = coordinator
     do {
-        try audioCoordinator.start()
+        try coordinator.start()
         print("liminal-capture: passive acoustic organ running.")
     } catch {
         print("liminal-capture: failed to start audio engine: \(error)")
@@ -161,11 +171,12 @@ func startBluetoothOrgan() {
         print("liminal-capture: failed to load/create the Bluetooth pseudonym key from Keychain -- Bluetooth organ will not run.")
         return
     }
-    let bluetoothCoordinator = BluetoothScanCoordinator(pseudonymKey: pseudonymKey) { window in
+    let coordinator = BluetoothScanCoordinator(pseudonymKey: pseudonymKey) { window in
         guard let payload = try? JSONEncoder().encode(window) else { return }
         sendFeatures(streamId: "bluetooth", payload: payload)
     }
-    bluetoothCoordinator.start()
+    bluetoothCoordinator = coordinator
+    coordinator.start()
     print("liminal-capture: Bluetooth organ running.")
 }
 
