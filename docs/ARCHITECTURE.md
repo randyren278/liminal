@@ -123,7 +123,7 @@ inspection.
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 9
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 11
 python3 checks/coverage_gate.py --manifest checks/mutations.json --report target/lcov.info
 ```
 

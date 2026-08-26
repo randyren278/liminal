@@ -56,7 +56,7 @@ checks/                   mutation guard, coverage gate, docs gate (see docs/ARC
 ```bash
 cargo test --workspace              # unit tests
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 9
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 11
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit

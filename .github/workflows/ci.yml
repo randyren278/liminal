@@ -83,4 +83,4 @@ jobs:
         run: >-
           python3 checks/mutation_guard.py
           --manifest checks/mutations.json
-          --assert-min 7
+          --assert-min 11
