@@ -74,10 +74,12 @@ cd app/Liminal && swift test        # Swift unit tests (JSON schema, hashing)
 cd app/Liminal && swiftformat --lint .
 cd app/Liminal && swift run liminal-doctor --json   # real hardware probe, no permission prompts
 
-cargo run -p liminal-tui            # the TUI itself -- run this in a real terminal to see it
+scripts/run-liminal.sh              # one-terminal runtime: daemon + capture + TUI
+scripts/run-liminal.sh --no-capture # daemon + TUI, useful for UI-only work
 
-cargo run -p liminald                                       # the ingest daemon
-cargo run -p liminald --example send_test_envelope          # sends it one real envelope (no hardware needed)
+cargo run -p liminal-tui            # TUI only, for development
+cargo run -p liminald               # ingest daemon only
+cargo run -p liminald --example send_test_envelope # sends one test envelope
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit
