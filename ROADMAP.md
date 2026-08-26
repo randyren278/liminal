@@ -162,16 +162,23 @@ the user rather than unilaterally:
    tone/noise/silence buffers (23 tests). `voice_activity_probability` is
    an explicit heuristic, documented as such — not a trained model, and
    §28 doesn't require one. EXPERIMENTAL until a human runs it live.
-6. **Wi-Fi + Bluetooth organs** — live `CWWiFiClient` scanning (Mode A
-   aggregate only, matching `liminal-policy`'s existing sanitization) and
-   `CBCentralManager` scanning with the existing HMAC pseudonymization
-   wired in for real, not just unit-tested against synthetic input.
+6. **DONE.** Wi-Fi + Bluetooth organs — live `CWWiFiClient` scanning (Mode
+   A aggregate only, `sanitizeWifiModeA` ported line-for-line from
+   `liminal_policy::sanitize_wifi_mode_a` so both languages agree on what
+   "Mode A" means) and `CBCentralManager` scanning with HMAC
+   pseudonymization wired in for real, not just unit-tested against
+   synthetic input. The HMAC key is Keychain-persisted (§18) rather than
+   random-per-process, so recurring-cluster detection (§39/§40) actually
+   means something across restarts. EXPERIMENTAL until a human runs it
+   live — same reasoning as items 2 and 5.
 
-Fusion (§52, combining these into one belief), calibration (§44), and the
-7-/30-day field trials remain explicitly **not** started here — per §47,
-building a classifier before real calibration data exists from items 2–6 is
-the premature complexity the master plan itself warns against. That stays
-future work until there's real data to justify it.
+**All six items on this roadmap slice are now built.** Fusion (§52,
+combining these into one belief), calibration (§44), and the 7-/30-day
+field trials remain explicitly **not** started — per §47, building a
+classifier before real calibration data exists from items 2–6 is the
+premature complexity the master plan itself warns against. That stays
+future work until there's real data to justify it, and until a human has
+run every organ above at least once to confirm they work as built.
 
 ---
 

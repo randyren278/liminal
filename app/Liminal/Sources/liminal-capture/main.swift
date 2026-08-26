@@ -1,18 +1,21 @@
 import AVFoundation
+import CoreBluetooth
 import Foundation
 import LiminalCore
 
-// `liminal-capture` -- the Vision + passive-acoustic organ capture daemon (ROADMAP items 2 and
-// 5, master plan §120 Vision Organ, §26 Passive Acoustic Organ). Headless: no window, per the
-// 2026-08-26 TUI-primary architecture pivot. Requests camera and microphone authorization
-// explicitly, one at a time (§90: explain before prompting), extracts 2D body pose per camera
-// frame and acoustic features per ~1s audio window, and emits each as a length-delimited
-// `liminal-ipc` envelope to the Unix socket at `/tmp/liminal-$UID/core.sock` (§15). Falls back to
-// stdout when nothing is listening there, so each organ is independently verifiable.
+// `liminal-capture` -- the sensor organ capture daemon, now covering all four ROADMAP items 2,
+// 5, and 6 (master plan §120 Vision Organ, §26 Passive Acoustic Organ, §34 Wi-Fi Organ, §38
+// Bluetooth Organ). Headless: no window, per the 2026-08-26 TUI-primary architecture pivot.
+// Requests camera and microphone authorization explicitly, one at a time (§90: explain before
+// prompting); Wi-Fi Mode A scanning needs no permission (confirmed by `liminal-doctor`'s earlier
+// probing -- aggregate RSSI/noise doesn't require Location); Bluetooth scanning checks
+// `CBCentralManager.authorization` and explains before the OS prompts. Emits each organ's
+// features as a length-delimited `liminal-ipc` envelope to the Unix socket at
+// `/tmp/liminal-$UID/core.sock` (§15), falling back to stdout when nothing is listening.
 //
-// Zero raw frames or raw continuous audio are ever written to disk -- only derived feature JSON
-// leaves this process (§120, §27's "no MFCC persistence" boundary is enforced by AudioFeatures.swift
-// simply never computing one).
+// Zero raw frames or raw continuous audio are ever written to disk; no SSID/BSSID or Bluetooth
+// device name is ever computed by this process, let alone sent anywhere (§120, §27's "no MFCC"
+// boundary, §37's Mode A structural guarantee, §39's HMAC-only Bluetooth identifiers).
 
 let socketPath = "/tmp/liminal-\(getuid())/core.sock"
 
@@ -120,6 +123,50 @@ if requestAuthorization(
     }
 } else {
     print("liminal-capture: microphone access denied. Passive acoustic organ will not run.")
+}
+
+// MARK: - Wi-Fi organ (Mode A, no permission required)
+
+let wifiCoordinator = WifiScanCoordinator { features in
+    guard let payload = try? JSONEncoder().encode(features) else { return }
+    sendFeatures(streamId: "wifi", payload: payload)
+}
+
+wifiCoordinator.start()
+print("liminal-capture: Wi-Fi organ running (Mode A, no permission required).")
+
+// MARK: - Bluetooth organ
+
+let bluetoothAuthorization = CBCentralManager.authorization
+switch bluetoothAuthorization {
+case .allowedAlways:
+    print("liminal-capture: Bluetooth already authorized.")
+    startBluetoothOrgan()
+case .notDetermined:
+    print("liminal-capture: requesting bluetooth authorization...")
+    print(
+        "Liminal wants to use Bluetooth to detect recurring proximity clusters (pseudonymized, "
+            + "never a device name) for environmental sensing. No device identity is ever stored.",
+    )
+    // CBCentralManager's own init triggers the OS authorization prompt on first use; the
+    // subsequent `centralManagerDidUpdateState` callback inside `BluetoothScanCoordinator` is
+    // what actually starts scanning once (if) the user grants it.
+    startBluetoothOrgan()
+default:
+    print("liminal-capture: Bluetooth access denied or restricted. Bluetooth organ will not run.")
+}
+
+func startBluetoothOrgan() {
+    guard let pseudonymKey = try? loadOrCreatePseudonymKey() else {
+        print("liminal-capture: failed to load/create the Bluetooth pseudonym key from Keychain -- Bluetooth organ will not run.")
+        return
+    }
+    let bluetoothCoordinator = BluetoothScanCoordinator(pseudonymKey: pseudonymKey) { window in
+        guard let payload = try? JSONEncoder().encode(window) else { return }
+        sendFeatures(streamId: "bluetooth", payload: payload)
+    }
+    bluetoothCoordinator.start()
+    print("liminal-capture: Bluetooth organ running.")
 }
 
 print("liminal-capture: running. Press Ctrl+C to stop.")

@@ -20,8 +20,7 @@ only this diagram's shape changed, not the privacy posture.
 flowchart TB
     subgraph Swift["Liminal capture daemon (Swift, headless, no window)"]
         Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
-        Sensors["liminal-capture: camera + 2D pose, mic + acoustic features (built, EXPERIMENTAL -- unverified by a human yet)"]
-        Extract["Wi-Fi/BLE feature extraction (not built)"]
+        Sensors["liminal-capture: camera+pose, mic+acoustics, Wi-Fi Mode A, Bluetooth clusters (built, EXPERIMENTAL -- unverified by a human yet)"]
     end
     subgraph Rust["liminald (Rust) -- ingest-only skeleton, built"]
         IPC["liminal-ipc: wire envelope, schema-version validation"]
@@ -35,7 +34,6 @@ flowchart TB
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors -->|"real IPC envelope over Unix socket -- verified end-to-end with a manual test client"| IPC
-    Extract -.->|"not built yet"| IPC
     IPC --> Ledger
     Ledger --> Policy
     Ledger --> Schema
@@ -143,15 +141,40 @@ so far:
     which is exactly the level of rigor that scope justifies (§47). No
     MFCC anywhere, matching §27's "disabled by default" boundary.
 
-  Both organs emit `liminal-ipc` envelopes over the same Unix socket (or
-  stdout fallback) via one shared send path, and neither persists any raw
-  frame or raw continuous audio to disk. The DSP and envelope/framing logic
-  is unit-tested (23 audio tests against synthetic silence/tone/noise
-  buffers, plus a real Unix-socket round-trip test using an in-process
-  POSIX listener); the actual capture paths are EXPERIMENTAL — they build
-  and the logic around them is tested, but a human has not yet run either
-  and confirmed real data comes out the other end, since granting a TCC
-  permission prompt requires a human present at the keyboard.
+  - **Wi-Fi organ** (§34/§37, Mode A only): `WifiScanCoordinator` calls
+    `CWInterface.scanForNetworks` every 45s (§35's 30-60s window) and pipes
+    results through `sanitizeWifiModeA` — the exact same aggregate-only
+    logic as `liminal_policy::sanitize_wifi_mode_a` on the Rust side,
+    ported deliberately so both languages agree on what "Mode A" means.
+    `WifiObservationModeA` has no SSID/BSSID field to leak one into; the
+    scan-result mapping code never even reads the network's SSID field.
+    Requires no
+    permission prompt (confirmed by `liminal-doctor`'s earlier probing).
+  - **Bluetooth organ** (§38/§39/§40): `BluetoothScanCoordinator` scans
+    continuously with duplicates allowed, pseudonymizing every
+    `CBPeripheral.identifier` via HMAC immediately on discovery — the raw
+    UUID is never held past that one callback. The HMAC key is
+    Keychain-persisted (§18's `pseudonym_hmac_key` entry, via
+    `app/Liminal/Sources/LiminalCore/PseudonymKeyStore.swift`) rather than
+    random-per-process, so the same
+    peripheral pseudonymizes to the same value across restarts (required
+    for §39/§40's "recurring proximity cluster" to mean anything). Checks
+    `CBCentralManager.authorization` and explains before the OS prompts.
+
+  All four organs emit `liminal-ipc` envelopes over the same Unix socket
+  (or stdout fallback) via one shared send path, and none persists any raw
+  frame, raw continuous audio, SSID/BSSID, or Bluetooth device name to
+  disk. The DSP, sanitization, and pseudonymization logic is unit-tested
+  (79 tests across all four organs' pure functions, including a
+  privacy-audit-style test that Wi-Fi/Bluetooth JSON literally cannot
+  contain the raw strings that went in); the actual capture paths (camera,
+  microphone, Wi-Fi scan, Bluetooth scan) are EXPERIMENTAL — they build and
+  the logic around them is tested, but a human has not yet run them and
+  confirmed real data comes out the other end, since granting a TCC
+  permission prompt requires a human present at the keyboard. The
+  Keychain-backed pseudonym key storage specifically is not unit-tested at
+  all (CI can't guarantee an unlocked, writable login keychain); only the
+  HMAC function it feeds is.
 
 Everything else in the master plan — Sensorium discovery's live acceptance
 mode, the full permission shell, `liminald` (item 3), passive acoustics,
