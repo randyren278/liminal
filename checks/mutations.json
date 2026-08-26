@@ -6,7 +6,9 @@
     "crates/liminal-schema/src/lib.rs",
     "crates/liminal-policy/src/lib.rs",
     "crates/liminal-policy/src/retention.rs",
-    "crates/liminal-ledger/src/lib.rs"
+    "crates/liminal-ledger/src/lib.rs",
+    "crates/liminal-memory/src/lib.rs",
+    "crates/liminal-schema/src/sensorium.rs"
   ],
   "mutations": [
     {
@@ -55,8 +57,8 @@
       "id": "belief-bridges-sensor-gap",
       "file": "crates/liminal-ledger/src/lib.rs",
       "invariant": "Belief can never be recorded for a stream across an unacknowledged sensor outage.",
-      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
-      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
     },
     {
       "id": "sqlite-ledger-accepts-corrupted-chain-on-reopen",
@@ -68,9 +70,23 @@
     {
       "id": "retention-past-tier-never-deleted",
       "file": "crates/liminal-policy/src/retention.rs",
-      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the §85 tier.",
+      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the \u00a785 tier.",
       "find": "    now_us - recorded_at_us >= cutoff_us",
       "replace": "    false"
+    },
+    {
+      "id": "sqlite-ledger-bridges-sensor-gap",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "SqliteLedger can never record belief for a stream across an unacknowledged sensor gap, mirroring the in-memory Ledger's guarantee.",
+      "find": "    /// See `Ledger::append_belief`.\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// See `Ledger::append_belief`.\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+    },
+    {
+      "id": "memory-enter-duration-boundary-not-inclusive",
+      "file": "crates/liminal-memory/src/lib.rs",
+      "invariant": "A run of samples sustained for exactly the configured enter_duration_us counts as met (inclusive boundary), matching the crate's documented boundary semantics.",
+      "find": "                    if ts - run_start >= config.enter_duration_us {",
+      "replace": "                    if ts - run_start > config.enter_duration_us {"
     }
   ]
 }
