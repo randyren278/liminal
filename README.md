@@ -11,12 +11,14 @@ is actually built, right now, against that plan.
 
 ## Status
 
-This repository is early. Nothing here talks to a camera, microphone,
-Wi-Fi radio, or Bluetooth radio yet. What exists is the hardware-independent
-canonical-state layer the rest of the system will be built on: the Rust
-crates that own privacy policy, epistemic-layer boundaries, the
-append-only event ledger, the wire contract to a future Swift sensor app,
-and a CLI to inspect all of it.
+This repository is early. `liminal doctor` (Swift) reads real camera/
+microphone/Wi-Fi/Bluetooth capability and current permission state — it
+does not open a capture session, tap audio, or scan Wi-Fi/BLE, so it
+requests no permission prompts of its own. Everything else is the
+hardware-independent canonical-state layer the rest of the system will be
+built on: the Rust crates that own privacy policy, epistemic-layer
+boundaries, the append-only event ledger, the wire contract to the future
+full Swift sensor app, and a CLI to inspect all of it.
 
 Per the plan's own [README Claims Policy](LIMINAL_MASTER_PLAN.md#145-readme-claims-policy),
 every capability below is labeled `WORKING`, `EXPERIMENTAL`, or `PLANNED` —
@@ -35,8 +37,9 @@ never claimed beyond what is tested.
 | Sensor-gap acknowledgment (belief can't bridge an outage) | WORKING | `crates/liminal-ledger`, mutation-guarded |
 | SQLite-backed ledger persistence (migration, crash recovery) | WORKING | `crates/liminal-ledger` (`SqliteLedger`), mutation-guarded |
 | IPC wire envelope (Swift↔Rust contract) + schema-version validation | WORKING | `crates/liminal-ipc` |
-| CLI: privacy audit, event browsing, provenance drilldown | WORKING | `crates/liminal-cli` (`liminal` binary) |
-| Sensorium discovery, camera/audio/Wi-Fi/BLE organs, fusion, TUI, native app | PLANNED | see [ROADMAP.md](ROADMAP.md) |
+| CLI: privacy audit, event browsing, append-order event history | WORKING | `crates/liminal-cli` (`liminal` binary) |
+| Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
+| Camera/audio/Wi-Fi/BLE capture organs, calibration, fusion, Spectral Canvas, TUI, full native app | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
 ## Repository layout
 
@@ -46,8 +49,9 @@ crates/liminal-memory/    occupancy event segmentation (hysteresis, gap merging)
 crates/liminal-policy/    HMAC pseudonymization, Wi-Fi Mode A sanitization, space-anchor policy, retention tiers
 crates/liminal-ledger/    hash-chain event log (in-memory + SQLite-backed), provenance graph, erase cascade, sensor-gap guard
 crates/liminal-ipc/       Protocol Buffers wire envelope + schema-version validation
-crates/liminal-cli/       `liminal` binary: privacy audit, event browsing, provenance drilldown
+crates/liminal-cli/       `liminal` binary: privacy audit, event browsing, append-order event history
 proto/                    liminal.proto — the IPC wire contract
+app/Liminal/              Swift package: LiminalCore (testable) + liminal-doctor (Sensorium probe)
 checks/                   mutation guard, coverage gate, docs gate (see docs/ARCHITECTURE.md)
 ```
 
@@ -57,6 +61,10 @@ checks/                   mutation guard, coverage gate, docs gate (see docs/ARC
 cargo test --workspace              # unit tests
 cargo clippy --workspace --all-targets -- -D warnings
 python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 11
+
+cd app/Liminal && swift test        # Swift unit tests (JSON schema, hashing)
+cd app/Liminal && swiftformat --lint .
+cd app/Liminal && swift run liminal-doctor --json   # real hardware probe, no permission prompts
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit

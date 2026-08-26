@@ -13,9 +13,10 @@ raw camera frames and raw microphone PCM never cross that boundary.
 
 ```mermaid
 flowchart TB
-    subgraph Swift["Liminal.app (Swift, not yet built)"]
-        Sensors["Camera / Mic / Wi-Fi / BLE"]
-        Extract["Feature extraction"]
+    subgraph Swift["Liminal.app (Swift, capture not yet built)"]
+        Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
+        Sensors["Camera / Mic / Wi-Fi / BLE capture (not built)"]
+        Extract["Feature extraction (not built)"]
     end
     subgraph Rust["liminald (Rust)"]
         IPC["liminal-ipc: wire envelope, schema-version validation"]
@@ -24,8 +25,9 @@ flowchart TB
         Schema["liminal-schema: epistemic layers, agent-role boundary, sensorium profile"]
         Memory["liminal-memory: occupancy segmentation"]
     end
-    CLI["liminal-cli: privacy audit, event browsing, provenance drilldown"]
+    CLI["liminal-cli: privacy audit, event browsing, event history"]
 
+    Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors --> Extract
     Extract -->|"derived observations only, Unix socket + protobuf"| IPC
     IPC --> Ledger
@@ -37,10 +39,8 @@ flowchart TB
 
 ## What exists today
 
-The canonical-state core and its wire contract exist so far — the part of
-the system that has no dependency on live camera/microphone/Wi-Fi/Bluetooth
-hardware, and is therefore fully unit-testable in CI without a Mac's
-sensors:
+The canonical-state core, its wire contract, and a first Swift probe exist
+so far:
 
 - **`crates/liminal-schema`** — the four epistemic layers (OBSERVED,
   INFERRED, INTERPRETED, IMAGINED) and the hard boundary between them: no
@@ -79,12 +79,45 @@ sensors:
   integrity view, explicitly NOT a provenance/derivation query; it was
   originally named `explain` and framed as §62 provenance drilldown, then
   renamed after review caught that mismatch — see the gap note below).
+- **`app/Liminal`** — a Swift package: `LiminalCore` (a testable library —
+  the `SensoriumProfile`/`SensorState` Codable types mirroring
+  `liminal-schema`'s Rust types field-for-field, plus hashing) and
+  `liminal-doctor` (the §21/§117 `liminal doctor` / `liminal doctor --json`
+  CLI, a thin wrapper over `LiminalCore`'s hardware probes). It reads real
+  camera format/resolution, microphone sample rate, Wi-Fi interface state,
+  and Bluetooth authorization/power state on the machine it runs on — but
+  it never opens an `AVCaptureSession`, taps microphone audio, scans Wi-Fi
+  networks, or starts a BLE scan, so it requests zero permission prompts.
+  See "TCC and unsigned CLI binaries" below before building anything past
+  this probe.
 
-Everything else in the master plan — Sensorium discovery, the Swift sensor
-organs, calibration, fusion, the Spectral Canvas, the TUI, field-note
-agents — is `PLANNED`. See [`ROADMAP.md`](../ROADMAP.md) for the proposed
-build order and [`AUDIT.md`](../AUDIT.md) for the full feature-by-feature
-status.
+Everything else in the master plan — Sensorium discovery's live acceptance
+mode, the full permission shell, actual sensor capture (camera Vision pose,
+audio taps, Wi-Fi/BLE scanning), calibration, fusion, the Spectral Canvas,
+the TUI, field-note agents — is `PLANNED`. See [`ROADMAP.md`](../ROADMAP.md)
+for the proposed build order and [`AUDIT.md`](../AUDIT.md) for the full
+feature-by-feature status.
+
+## TCC and unsigned CLI binaries
+
+`liminal-doctor` is an unsigned Swift Package Manager executable, not a
+signed `.app` bundle. On macOS, an unsigned CLI tool invoked from a
+terminal does not get its own TCC (privacy permission) identity — the OS
+attributes camera/microphone/Bluetooth authorization checks to whatever
+process hosts it (observed directly during development: `AVCaptureDevice
+.authorizationStatus(for: .audio)` returned `available` because the host
+terminal already had microphone access granted, not because
+`liminal-doctor` itself had been granted anything).
+
+This is fine for `liminal-doctor`'s current scope (it only ever *reads*
+authorization state, never requests it), but it means the next milestone —
+actually requesting camera/microphone/Bluetooth access and having macOS
+prompt the user by *Liminal's* name, not the terminal's — requires
+Liminal.app to be a properly code-signed application bundle with its own
+bundle identifier and Info.plist usage-description strings (§90/§118).
+Building that permission shell as another SPM executable would silently
+attribute every grant to the terminal instead of to Liminal, which is
+exactly the "no hidden sensing" violation §3/§14 exist to prevent.
 
 ## Known architectural gap: two disconnected provenance mechanisms
 
