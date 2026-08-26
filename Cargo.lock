@@ -1002,8 +1002,10 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "image",
+ "liminal-ledger",
  "ratatui",
  "ratatui-image",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,10 +9,20 @@
 //! §103 (Forgetting), §108 (Database Migration Policy), §142 (Required Mutation Tests #6, #9).
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use thiserror::Error;
+
+/// §17 Storage Locations: canonical data lives under `~/Library/Application Support/Liminal/`.
+/// Shared by every process that opens the real ledger (`liminald`, `liminal-tui`) so the path
+/// can't drift between them.
+pub fn default_db_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home)
+        .join("Library/Application Support/Liminal")
+        .join("liminal.db")
+}
 
 #[derive(Debug, Clone)]
 pub struct Event {
@@ -493,6 +503,12 @@ impl Default for ProvenanceGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_db_path_ends_with_the_section_17_relative_path() {
+        let path = default_db_path();
+        assert!(path.ends_with("Library/Application Support/Liminal/liminal.db"));
+    }
 
     #[test]
     fn chain_verifies_on_untampered_ledger() {

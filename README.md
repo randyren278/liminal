@@ -40,7 +40,7 @@ never claimed beyond what is tested.
 | CLI: privacy audit, event browsing, append-order event history | WORKING | `crates/liminal-cli` (`liminal` binary) |
 | Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
 | Vision organ (`liminal-capture`): camera capture + 2D body pose extraction + IPC envelope emission, zero raw frames persisted | EXPERIMENTAL — builds and unit-tests clean, but real-camera capture has not yet been confirmed by a human running it and granting the permission prompt | `app/Liminal` (`liminal-capture` binary) |
-| `liminal-tui` mode skeleton + real terminal image/video rendering (Kitty/Sixel via `ratatui-image`) | WORKING | `crates/liminal-tui` |
+| `liminal-tui`: mode skeleton, real terminal image rendering, REFERENCE-mode skeleton from real pose data, live event counts | WORKING | `crates/liminal-tui` |
 | `liminald`: Unix-socket ingest daemon, validates + persists envelopes to `SqliteLedger` | WORKING — verified end-to-end with a real socket connection and real SQLite row, see `crates/liminald/examples/send_test_envelope.rs` | `crates/liminald` |
 | Passive/active acoustics, Wi-Fi/BLE capture organs, fusion, `liminal-tui` wired to live data | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
