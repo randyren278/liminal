@@ -141,11 +141,19 @@ the user rather than unilaterally:
 3. **`liminald` skeleton** — a Rust daemon accepting the Unix socket
    connection from item 2, decoding envelopes, and appending them to
    `SqliteLedger` (already built). No fusion yet — just ingest and persist.
-4. **Wire `liminal-tui` to `liminald`'s SQLite store** — REFERENCE mode
-   renders the live camera frame reference view (via the image panel from
-   item 1) and pose overlay; a status panel shows real ingested event
-   counts. Done-state: camera moves, the TUI updates within the plan's
-   belief-latency budget (§93, p95 < 500ms as a target, not yet enforced).
+4. **DONE, with a correction from how it was originally scoped here.**
+   Wire `liminal-tui` to `liminald`'s SQLite store — this item's original
+   wording called for "the live camera frame reference view... and pose
+   overlay," which would require a raw camera frame in the ledger. §120's
+   exit criterion (zero raw video files) and the Swift→Rust contract (§14,
+   derived features only) both forbid that — no raw frame ever exists to
+   render. Built instead: REFERENCE mode renders a real skeleton from the
+   most recent `liminal-capture` pose observation (derived joint data, not
+   pixels — see `crates/liminal-tui/src/ledger_view.rs`), and MEMORY mode
+   shows the real ingested event count. Both fall back to the item-1 demo
+   pattern when no real data exists yet. Belief-latency budget (§93, p95 <
+   500ms) not yet measured — there's no belief frame to time until fusion
+   exists.
 5. **Passive acoustic organ** — `AVAudioEngine` tap, §27 features (RMS,
    spectral centroid/rolloff/flatness, ZCR, VAD probability), same
    envelope/socket path as item 2.

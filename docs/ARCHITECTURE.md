@@ -31,7 +31,7 @@ flowchart TB
         Memory["liminal-memory: occupancy segmentation (not wired to ingest yet)"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
-    TUI["liminal-tui: PRIMARY interface -- mode skeleton + real bitmap render built; wiring to Ledger not done"]
+    TUI["liminal-tui: PRIMARY interface -- reads real ledger data (REFERENCE mode skeleton)"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors -->|"real IPC envelope over Unix socket -- verified end-to-end with a manual test client"| IPC
@@ -41,7 +41,7 @@ flowchart TB
     Ledger --> Schema
     Ledger -.-> Memory
     Ledger --> CLI
-    Ledger -.-> TUI
+    Ledger -->|"reads liminal.db directly, no socket -- polls a few times/sec"| TUI
 ```
 
 ## What exists today
@@ -102,9 +102,18 @@ so far:
   a mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE, §72) with
   `ratatui-image` proven to render real animated bitmap output over the
   terminal's graphics protocol (Kitty/Sixel, auto-detected; halfblock
-  fallback otherwise) — the demo panel is an explicitly-labeled synthetic
-  pattern, not a sensor feed, per §146's Demo Honesty rule. Not yet wired
-  to `liminal-ledger` or any real sensor data.
+  fallback otherwise). Now reads `liminal-ledger`'s real SQLite store
+  directly (polling `default_db_path()`, no socket — the TUI and `liminald`
+  are both just readers/writers of the same file): REFERENCE mode renders a
+  real skeleton from the most recent `liminal-capture` pose observation
+  when one exists, and MEMORY mode shows the real total ingested event
+  count. When no real data has arrived yet, both modes fall back to an
+  explicitly-labeled synthetic demo pattern (§146 Demo Honesty). Correction
+  to the original ROADMAP.md wording for this item, recorded in
+  `crates/liminal-tui/src/ledger_view.rs`'s module doc: it described a "live camera frame"
+  reference view, which would require a raw frame in the ledger — §120 and
+  the Swift↔Rust contract both forbid that, so a skeleton derived from real
+  joint data is shown instead, never camera pixels.
 - **`app/Liminal`** — a Swift package: `LiminalCore` (a testable library —
   the `SensoriumProfile`/`SensorState` Codable types mirroring
   `liminal-schema`'s Rust types field-for-field, plus hashing) and

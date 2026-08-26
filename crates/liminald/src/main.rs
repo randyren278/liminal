@@ -3,18 +3,10 @@
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::{Arc, Mutex};
 
-use liminal_ledger::SqliteLedger;
+use liminal_ledger::{default_db_path, SqliteLedger};
 use liminald::{
     ingest_envelope, prepare_socket_path, read_length_delimited_envelope, socket_path_for_uid,
 };
-
-/// §17 Storage Locations: canonical data lives under `~/Library/Application Support/Liminal/`.
-fn db_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let dir = std::path::PathBuf::from(home).join("Library/Application Support/Liminal");
-    std::fs::create_dir_all(&dir).expect("failed to create Application Support directory");
-    dir.join("liminal.db")
-}
 
 fn handle_connection(stream: UnixStream, ledger: Arc<Mutex<SqliteLedger>>) {
     let mut stream = stream;
@@ -58,7 +50,9 @@ fn main() {
 
     println!("liminald: listening on {}", socket_path.display());
 
-    let db = db_path();
+    let db = default_db_path();
+    std::fs::create_dir_all(db.parent().unwrap())
+        .expect("failed to create Application Support directory");
     println!("liminald: opening ledger at {}", db.display());
     // §93 performance budget doesn't specify this constant; 30s is a placeholder generous enough
     // not to spuriously flag gaps during normal camera-frame-rate jitter, tightened once a real
