@@ -39,7 +39,8 @@ never claimed beyond what is tested.
 | IPC wire envelope (Swift↔Rust contract) + schema-version validation | WORKING | `crates/liminal-ipc` |
 | CLI: privacy audit, event browsing, append-order event history | WORKING | `crates/liminal-cli` (`liminal` binary) |
 | Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
-| Camera/audio/Wi-Fi/BLE capture organs, calibration, fusion, Spectral Canvas, TUI, full native app | PLANNED | see [ROADMAP.md](ROADMAP.md) |
+| `liminal-tui` mode skeleton + real terminal image/video rendering (Kitty/Sixel via `ratatui-image`) | WORKING | `crates/liminal-tui` |
+| Camera/audio/Wi-Fi/BLE capture organs, `liminald`, fusion | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
 ## Repository layout
 
@@ -50,6 +51,7 @@ crates/liminal-policy/    HMAC pseudonymization, Wi-Fi Mode A sanitization, spac
 crates/liminal-ledger/    hash-chain event log (in-memory + SQLite-backed), provenance graph, erase cascade, sensor-gap guard
 crates/liminal-ipc/       Protocol Buffers wire envelope + schema-version validation
 crates/liminal-cli/       `liminal` binary: privacy audit, event browsing, append-order event history
+crates/liminal-tui/       `liminal-tui` binary: PRIMARY interface (mode skeleton + real terminal image rendering)
 proto/                    liminal.proto — the IPC wire contract
 app/Liminal/              Swift package: LiminalCore (testable) + liminal-doctor (Sensorium probe)
 checks/                   mutation guard, coverage gate, docs gate (see docs/ARCHITECTURE.md)
@@ -65,6 +67,8 @@ python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 1
 cd app/Liminal && swift test        # Swift unit tests (JSON schema, hashing)
 cd app/Liminal && swiftformat --lint .
 cd app/Liminal && swift run liminal-doctor --json   # real hardware probe, no permission prompts
+
+cargo run -p liminal-tui            # the TUI itself -- run this in a real terminal to see it
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit
