@@ -1,0 +1,12 @@
+[package]
+name = "liminald"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+liminal-ipc = { path = "../liminal-ipc" }
+liminal-ledger = { path = "../liminal-ledger" }
+serde_json.workspace = true
+thiserror.workspace = true
+prost = "0.14"
+libc = "0.2"

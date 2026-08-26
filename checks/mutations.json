@@ -8,7 +8,8 @@
     "crates/liminal-policy/src/retention.rs",
     "crates/liminal-ledger/src/lib.rs",
     "crates/liminal-memory/src/lib.rs",
-    "crates/liminal-schema/src/sensorium.rs"
+    "crates/liminal-schema/src/sensorium.rs",
+    "crates/liminald/src/lib.rs"
   ],
   "mutations": [
     {
@@ -87,6 +88,13 @@
       "invariant": "A run of samples sustained for exactly the configured enter_duration_us counts as met (inclusive boundary), matching the crate's documented boundary semantics.",
       "find": "                    if ts - run_start >= config.enter_duration_us {",
       "replace": "                    if ts - run_start > config.enter_duration_us {"
+    },
+    {
+      "id": "liminald-socket-dir-not-private",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "The liminald socket directory is always created with 0700 permissions (owner-only) -- never a broader mode that would let other local users on the machine read or connect to the IPC socket.",
+      "find": "    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))",
+      "replace": "    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))"
     }
   ]
 }

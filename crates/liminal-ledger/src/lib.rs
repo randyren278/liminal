@@ -323,6 +323,31 @@ impl SqliteLedger {
         )
     }
 
+    /// Like `append_observation`, but embeds an arbitrary derived-feature payload (e.g. a
+    /// decoded `liminal-ipc` envelope's feature JSON from a real sensor organ) alongside
+    /// `stream_id`/`ts_us`, rather than the fixed `{stream_id, ts_us}` shape. Same sensor-gap
+    /// tracking as `append_observation` -- this is the ingest path `liminald` uses for real
+    /// sensor data (§15), where `append_observation` alone would discard the actual features.
+    pub fn append_observation_with_features(
+        &mut self,
+        id: impl Into<String>,
+        stream_id: &str,
+        ts_us: i64,
+        features: serde_json::Value,
+    ) -> Result<(), LedgerError> {
+        if let Some(&last) = self.stream_last_ts_us.get(stream_id) {
+            if ts_us - last > self.max_silent_gap_us {
+                self.stream_gap_pending.insert(stream_id.to_string(), true);
+            }
+        }
+        self.stream_last_ts_us.insert(stream_id.to_string(), ts_us);
+        self.append_raw(
+            id,
+            "observation",
+            serde_json::json!({ "stream_id": stream_id, "ts_us": ts_us, "features": features }),
+        )
+    }
+
     /// See `Ledger::record_sensor_gap`.
     pub fn record_sensor_gap(
         &mut self,
@@ -629,6 +654,39 @@ mod tests {
         let reopened = SqliteLedger::open(&path, 5_000_000).unwrap();
         assert!(reopened.verify_chain().is_ok());
         assert_eq!(reopened.events().unwrap().len(), 3);
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn append_observation_with_features_embeds_the_features_and_still_tracks_gaps() {
+        let path = temp_db_path("features");
+        let mut ledger = SqliteLedger::open(&path, 5_000_000).unwrap();
+
+        ledger
+            .append_observation_with_features(
+                "obs_1",
+                "camera",
+                0,
+                serde_json::json!({ "body_count": "one", "joints": [] }),
+            )
+            .unwrap();
+
+        let events = ledger.events().unwrap();
+        assert_eq!(events[0].payload["features"]["body_count"], "one");
+
+        // Same gap-tracking as append_observation: a big enough jump sets the gap flag, which
+        // append_belief still enforces regardless of which append_* method produced the history.
+        ledger
+            .append_observation_with_features("obs_2", "camera", 20_000_000, serde_json::json!({}))
+            .unwrap();
+        let err = ledger
+            .append_belief("belief_1", "camera", 20_000_100)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            LedgerError::SensorGapNotAcknowledged("camera".to_string())
+        );
 
         std::fs::remove_file(&path).unwrap();
     }

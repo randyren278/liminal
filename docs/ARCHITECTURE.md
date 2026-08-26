@@ -20,28 +20,28 @@ only this diagram's shape changed, not the privacy posture.
 flowchart TB
     subgraph Swift["Liminal capture daemon (Swift, headless, no window)"]
         Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
-        Sensors["Camera / Mic / Wi-Fi / BLE capture (not built)"]
-        Extract["Feature extraction (not built)"]
+        Sensors["liminal-capture: camera + 2D pose (built, EXPERIMENTAL -- unverified by a human yet)"]
+        Extract["Audio/Wi-Fi/BLE feature extraction (not built)"]
     end
-    subgraph Rust["liminald (Rust)"]
+    subgraph Rust["liminald (Rust) -- ingest-only skeleton, built"]
         IPC["liminal-ipc: wire envelope, schema-version validation"]
         Ledger["liminal-ledger: hash-chain events (in-memory + SQLite), erase cascade"]
         Policy["liminal-policy: pseudonymization, privacy audit, space anchor, retention"]
         Schema["liminal-schema: epistemic layers, agent-role boundary, sensorium profile"]
-        Memory["liminal-memory: occupancy segmentation"]
+        Memory["liminal-memory: occupancy segmentation (not wired to ingest yet)"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
     TUI["liminal-tui: PRIMARY interface -- mode skeleton + real bitmap render built; wiring to Ledger not done"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
-    Sensors --> Extract
-    Extract -->|"derived observations only, Unix socket + protobuf"| IPC
+    Sensors -->|"real IPC envelope over Unix socket -- verified end-to-end with a manual test client"| IPC
+    Extract -.->|"not built yet"| IPC
     IPC --> Ledger
     Ledger --> Policy
     Ledger --> Schema
-    Ledger --> Memory
+    Ledger -.-> Memory
     Ledger --> CLI
-    Ledger --> TUI
+    Ledger -.-> TUI
 ```
 
 ## What exists today
@@ -86,6 +86,18 @@ so far:
   integrity view, explicitly NOT a provenance/derivation query; it was
   originally named `explain` and framed as §62 provenance drilldown, then
   renamed after review caught that mismatch — see the gap note below).
+- **`crates/liminald`** — ROADMAP item 3: an ingest-only daemon skeleton.
+  Prepares the §15 socket path (0700 directory, 0600 socket file — one of
+  its two mutation-guarded invariants), binds a `UnixListener`, and for each
+  connection decodes length-delimited `liminal-ipc` envelopes, validates
+  their schema version, and persists them via
+  `SqliteLedger::append_observation_with_features` (a new method added
+  alongside this crate, since the existing `append_observation` discarded
+  everything but `stream_id`/`ts_us` — real sensor features need to survive
+  ingest). No fusion, no belief frames — just validate and persist. Verified
+  end-to-end for real: `crates/liminald/examples/send_test_envelope.rs`
+  connects over a real Unix socket and the resulting SQLite row was
+  inspected directly (not just asserted in a test) during development.
 - **`crates/liminal-tui`** — the primary interface (2026-08-26 pivot, above):
   a mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE, §72) with
   `ratatui-image` proven to render real animated bitmap output over the
@@ -186,7 +198,7 @@ inspection.
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 11
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 12
 python3 checks/coverage_gate.py --manifest checks/mutations.json --report target/lcov.info
 ```
 
