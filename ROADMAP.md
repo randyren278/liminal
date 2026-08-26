@@ -96,38 +96,90 @@ Rust type unchanged; every sensor state in §3's enum (`UNKNOWN` through
 
 ---
 
-## What's deliberately not on this list
+## Update 2026-08-26: hardware phase, TUI-primary pivot
+
+Items 1–6 above landed and merged. The user is now physically present at
+the target Mac, which unblocks the hardware-dependent work this document
+originally deferred (see the superseded section below, kept for the
+record). Two things changed since then, both decided in conversation with
+the user rather than unilaterally:
+
+1. **`liminal doctor` (L2) is done and merged** — `app/Liminal`, a Swift
+   package that reads real camera/microphone/Wi-Fi/Bluetooth capability and
+   authorization state. It never opens a capture session, so it requests no
+   permission prompts and needs no code signing to be useful.
+2. **The master plan's native SwiftUI/Metal app (D014) is superseded by a
+   TUI-primary architecture**, at the user's direction. Rationale: a
+   dedicated `.app` bundle only matters for *branded* permission prompts and
+   a polished menu-bar presence — neither is required to build or verify
+   real sensor capture. Swift's role shrinks to a **headless capture
+   daemon** (AVFoundation + Vision, AVAudioEngine, CoreWLAN, CoreBluetooth —
+   still all real macOS APIs behind real TCC prompts, just with no window of
+   its own); the Rust TUI (`liminal-tui`, already first-class per §80) becomes
+   the **primary** interface, not a secondary operator tool, using
+   `ratatui` + `ratatui-image` for real bitmap/video rendering (the user's
+   terminal, Ghostty, supports the Kitty graphics protocol — confirmed, not
+   assumed). This is a real architecture decision, recorded here and in
+   `docs/ARCHITECTURE.md`, not a silent drift from the master plan's stated
+   D014 — `LIMINAL_MASTER_PLAN.md` itself is left unedited as the original
+   constitution; this file and `docs/ARCHITECTURE.md` track what's actually
+   being built against it, same as always.
+
+### New roadmap: hardware capture + TUI (in dependency order)
+
+1. **`liminal-tui` skeleton** — a Rust binary crate using `ratatui`, wiring
+   up the mode structure from §72 (SPECTRAL/BELIEF/MEMORY/FIELD NOTES) as
+   navigable screens with placeholder content, plus a `ratatui-image`-based
+   panel proven to render a real image in the user's terminal. Done-state:
+   the user runs it and confirms an actual image (not ASCII art) renders.
+2. **Vision organ (camera capture + 2D pose)** — extend `app/Liminal` with
+   a capture daemon subcommand: `AVCaptureSession` + `VNDetectHumanBodyPoseRequest`,
+   emitting body-count/pose/motion-region features as `liminal-ipc` protobuf
+   envelopes over a Unix domain socket (§15/§119, socket path per §15). Zero
+   raw frames persisted (§120 exit criterion). This is the first command that
+   requests a real TCC prompt — the user grants it interactively.
+3. **`liminald` skeleton** — a Rust daemon accepting the Unix socket
+   connection from item 2, decoding envelopes, and appending them to
+   `SqliteLedger` (already built). No fusion yet — just ingest and persist.
+4. **Wire `liminal-tui` to `liminald`'s SQLite store** — REFERENCE mode
+   renders the live camera frame reference view (via the image panel from
+   item 1) and pose overlay; a status panel shows real ingested event
+   counts. Done-state: camera moves, the TUI updates within the plan's
+   belief-latency budget (§93, p95 < 500ms as a target, not yet enforced).
+5. **Passive acoustic organ** — `AVAudioEngine` tap, §27 features (RMS,
+   spectral centroid/rolloff/flatness, ZCR, VAD probability), same
+   envelope/socket path as item 2.
+6. **Wi-Fi + Bluetooth organs** — live `CWWiFiClient` scanning (Mode A
+   aggregate only, matching `liminal-policy`'s existing sanitization) and
+   `CBCentralManager` scanning with the existing HMAC pseudonymization
+   wired in for real, not just unit-tested against synthetic input.
+
+Fusion (§52, combining these into one belief), calibration (§44), and the
+7-/30-day field trials remain explicitly **not** started here — per §47,
+building a classifier before real calibration data exists from items 2–6 is
+the premature complexity the master plan itself warns against. That stays
+future work until there's real data to justify it.
+
+---
+
+## Superseded: original "what's deliberately not on this list" (2026-08-25)
+
+Kept for the record — the reasoning was correct at the time (no human was
+present to grant permissions or decide on the app-vs-TUI question) and the
+update above supersedes it now that both conditions changed.
 
 The master plan's fixed development order (§177) goes sensor discovery →
 permissions → IPC → vision → acoustics → Wi-Fi → Bluetooth → calibration →
 fusion → canvas → TUI → agents → field trials. Most of that is **Swift code
-that drives real macOS hardware**, and I want to be direct about why it
-isn't on this roadmap rather than attempt it and produce something that
-looks done but isn't:
-
-- **The Swift sensor organs and native app** (camera/Vision, AVAudioEngine,
-  CoreWLAN, CoreBluetooth, the Spectral Canvas) need a human physically
-  present to grant camera/microphone/Bluetooth/Location TCC permission
-  prompts — macOS will not grant these to an unattended agent, and that's
-  correct, not a limitation to route around. They also need code signing
-  under an Apple Developer identity to run at all.
-- **Any live acceptance test** (`liminal doctor --live`, §143) has the same
-  dependency — it exists to prove real hardware truth, which by definition
-  can't be faked in CI or by me alone.
-- **The 7-day and 30-day field trials** (L20, L23) require the app running
-  unattended in a real room on your machine. Starting one is your call, not
-  something to schedule on my own initiative.
-- **The nonvisual fusion classifier and its held-out evaluation** (L11)
-  needs real calibration data captured from the sensors above. Building a
-  classifier before that data exists would be exactly the premature
-  complexity §47 warns against.
-
-Once items 1–6 are in and a human has walked through the Swift
-permission/capture setup on real hardware at least once, the natural next
-roadmap is the Swift sensor organs themselves — but that's a decision for
-after this slice lands, not a commitment to make now.
+that drives real macOS hardware**, and the Swift sensor organs and native
+app needed a human physically present to grant camera/microphone/
+Bluetooth/Location TCC permission prompts, and code signing under an Apple
+Developer identity to run at all. The 7-/30-day field trials and the
+nonvisual fusion classifier (needs real calibration data, §47) remain
+future work for the same underlying reasons as before.
 
 ---
 
-**Approve, cut, or reorder this list, then Phase 3 builds it one item at a
-time — test-first, mutation-guarded, CI green before the next item starts.**
+**This update was discussed and directed by the user in conversation, not
+presented as a batched proposal awaiting approval — build proceeds
+directly per the "New roadmap" section above.**

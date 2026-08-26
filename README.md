@@ -39,7 +39,7 @@ never claimed beyond what is tested.
 | IPC wire envelope (Swift↔Rust contract) + schema-version validation | WORKING | `crates/liminal-ipc` |
 | CLI: privacy audit, event browsing, append-order event history | WORKING | `crates/liminal-cli` (`liminal` binary) |
 | Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
-| Camera/audio/Wi-Fi/BLE capture organs, calibration, fusion, Spectral Canvas, TUI, full native app | PLANNED | see [ROADMAP.md](ROADMAP.md) |
+| Camera/audio/Wi-Fi/BLE capture organs, `liminald`, `liminal-tui` (primary interface — see ROADMAP.md's TUI-primary pivot), calibration, fusion | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
 ## Repository layout
 

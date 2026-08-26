@@ -3,17 +3,22 @@
 Full rationale: [`LIMINAL_MASTER_PLAN.md`](../LIMINAL_MASTER_PLAN.md). This
 document tracks the architecture of what is actually built.
 
-## Target runtime shape (planned)
+## Target runtime shape (revised 2026-08-26 — TUI-primary)
 
-The plan splits Liminal into three processes: a Swift GUI (Liminal.app)
-that owns protected sensors and TCC permissions, a Rust daemon (`liminald`)
-that owns canonical state, and a Rust TUI/CLI (`liminal`) for operator
-control. Swift and Rust talk over a Unix domain socket via Protocol Buffers;
-raw camera frames and raw microphone PCM never cross that boundary.
+The master plan's original D014 ("native visual app is first-class") is
+superseded, at the user's direction — see `ROADMAP.md`'s "Update
+2026-08-26" section for the full rationale. Swift no longer owns a windowed
+app; it's a **headless capture daemon**. The Rust TUI is the primary
+interface, rendering real bitmap/video via the Kitty graphics protocol
+(confirmed supported by the user's terminal, Ghostty 1.3.1) through
+`ratatui-image`, not ASCII-art approximation. Swift and Rust still talk
+over a Unix domain socket via Protocol Buffers (§15) exactly as before;
+raw camera frames and raw microphone PCM still never cross that boundary —
+only this diagram's shape changed, not the privacy posture.
 
 ```mermaid
 flowchart TB
-    subgraph Swift["Liminal.app (Swift, capture not yet built)"]
+    subgraph Swift["Liminal capture daemon (Swift, headless, no window)"]
         Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
         Sensors["Camera / Mic / Wi-Fi / BLE capture (not built)"]
         Extract["Feature extraction (not built)"]
@@ -26,6 +31,7 @@ flowchart TB
         Memory["liminal-memory: occupancy segmentation"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
+    TUI["liminal-tui: PRIMARY interface -- ratatui + ratatui-image, real video/bitmap rendering (not built)"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors --> Extract
@@ -35,6 +41,7 @@ flowchart TB
     Ledger --> Schema
     Ledger --> Memory
     Ledger --> CLI
+    Ledger --> TUI
 ```
 
 ## What exists today
