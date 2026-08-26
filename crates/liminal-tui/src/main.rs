@@ -25,8 +25,8 @@ use ledger_view::{read_ledger_snapshot, LedgerSnapshot};
 use mode::Mode;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Terminal;
 use ratatui_image::picker::Picker;
@@ -45,6 +45,11 @@ const IMAGE_WIDTH: u32 = 120;
 const IMAGE_HEIGHT: u32 = 60;
 const DEMO_IMAGE_TITLE: &str = "DEMO RENDER (not a sensor feed)";
 const LIVE_IMAGE_TITLE: &str = "LIVE POSE (derived from real Vision data, not a camera image)";
+const BG: Color = Color::Rgb(8, 15, 24);
+const PANEL: Color = Color::Rgb(15, 28, 40);
+const MUTED: Color = Color::Rgb(125, 151, 164);
+const TEAL: Color = Color::Rgb(69, 224, 190);
+const AMBER: Color = Color::Rgb(255, 184, 92);
 
 impl App {
     fn new() -> io::Result<Self> {
@@ -89,17 +94,22 @@ impl App {
 
 fn mode_body(mode: Mode, snapshot: &Option<LedgerSnapshot>) -> String {
     match mode {
-        Mode::Spectral => "Acoustic / RF / BLE fields render here once the sensor organs are wired (ROADMAP items 5, 6).".to_string(),
-        Mode::Belief => "Fused occupancy/position hypothesis with epistemic confidence -- needs fusion (post-organs, §52).".to_string(),
+        Mode::Spectral => match snapshot {
+            Some(s) if !s.stream_event_counts.is_empty() => format!(
+                "LIVE SENSOR FIELD\n\n{}\n\nDerived features only. Raw audio, video, SSIDs, and device names never enter the ledger.",
+                s.stream_event_counts.iter().map(|(stream, count)| format!("{stream:<12} {count:>6} observations")).collect::<Vec<_>>().join("\n")
+            ),
+            _ => "WAITING FOR SENSOR FIELD\n\nStart the capture organ to stream derived camera, microphone, Wi-Fi, and Bluetooth observations into the ledger.".to_string(),
+        },
+        Mode::Belief => "NO FUSED BELIEF YET\n\nThe ingest path is live, but fusion is intentionally not inferred from raw observations. This panel will become confidence-aware once the fusion layer is built.".to_string(),
         Mode::Memory => match snapshot {
             Some(s) => format!(
-                "Timeline scrubber over Events/Episodes/Patterns not built yet -- but liminald has \
-                 ingested {} real event(s) so far. Full scrubbing needs Episode/Pattern types (later).",
+                "LEDGER ONLINE\n\n{} total event(s) ingested.\n\nTimeline scrubbing over Events/Episodes/Patterns is next; this view is already reading the canonical SQLite ledger.",
                 s.total_event_count
             ),
-            None => "No events ingested yet -- run liminald and a sensor organ (e.g. liminal-capture).".to_string(),
+            None => "LEDGER NOT CREATED\n\nStart the centralized launcher to bring up liminald and the capture organs.".to_string(),
         },
-        Mode::FieldNotes => "Archivist/Ethnographer/Skeptic/Poet epistemic cards -- needs the agent layer (§63, later).".to_string(),
+        Mode::FieldNotes => "FIELD NOTES QUEUED\n\nArchivist / Ethnographer / Skeptic / Poet cards will appear here when the agent layer is connected. No interpretation is fabricated from missing data.".to_string(),
         Mode::Reference => match snapshot {
             Some(s) if !s.latest_camera_joints.is_empty() => format!(
                 "REFERENCE / POSE DATA ACTIVE. {} joint(s) from the most recent liminal-capture \
@@ -131,10 +141,11 @@ fn main() -> io::Result<()> {
     loop {
         terminal.draw(|frame| {
             let area = frame.area();
+            frame.render_widget(Block::default().style(Style::default().bg(BG)), area);
             let chunks = Layout::vertical([
-                Constraint::Length(3),
+                Constraint::Length(4),
                 Constraint::Min(0),
-                Constraint::Length(1),
+                Constraint::Length(2),
             ])
             .split(area);
 
@@ -151,33 +162,126 @@ fn main() -> io::Result<()> {
                     }
                 })
                 .collect();
-            let header = Paragraph::new(Line::from(tabs))
-                .block(Block::default().borders(Borders::ALL).title("LIMINAL"));
+            let mut header_lines = vec![Line::from(vec![
+                Span::styled(
+                    " ◈ LIMINAL ",
+                    Style::default()
+                        .fg(BG)
+                        .bg(TEAL)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "  SENSORIUM / OPERATOR CONSOLE",
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])];
+            header_lines.push(Line::from(tabs));
+            let header = Paragraph::new(Text::from(header_lines))
+                .style(Style::default().bg(PANEL))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(TEAL)),
+                );
             frame.render_widget(header, chunks[0]);
 
             let body_chunks =
                 Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
                     .split(chunks[1]);
+            let left_chunks =
+                Layout::vertical([Constraint::Length(9), Constraint::Min(0)]).split(body_chunks[0]);
+
+            let mut status_lines = vec![Line::from(Span::styled(
+                format!(
+                    "{}  /  {}",
+                    app.mode.title(),
+                    if app.snapshot.is_some() {
+                        "LEDGER ONLINE"
+                    } else {
+                        "WAITING FOR LEDGER"
+                    }
+                ),
+                Style::default()
+                    .fg(if app.snapshot.is_some() { TEAL } else { AMBER })
+                    .add_modifier(Modifier::BOLD),
+            ))];
+            if let Some(snapshot) = &app.snapshot {
+                status_lines.push(Line::from(format!(
+                    "EVENTS  {:>8}",
+                    snapshot.total_event_count
+                )));
+                for (stream, count) in &snapshot.stream_event_counts {
+                    status_lines.push(Line::from(format!("{stream:<8} {count:>8}")));
+                }
+                if let Some((kind, stream)) = &snapshot.latest_event {
+                    status_lines.push(Line::from(Span::styled(
+                        format!("\nLAST  {kind} / {stream}"),
+                        Style::default().fg(MUTED),
+                    )));
+                }
+            } else {
+                status_lines.push(Line::from(Span::styled(
+                    "EVENTS         --",
+                    Style::default().fg(MUTED),
+                )));
+                status_lines.push(Line::from(Span::styled(
+                    "Start with scripts/run-liminal.sh",
+                    Style::default().fg(MUTED),
+                )));
+            }
+            let status = Paragraph::new(Text::from(status_lines))
+                .style(Style::default().fg(Color::White).bg(PANEL))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Rgb(44, 77, 91)))
+                        .title(" TELEMETRY "),
+                );
+            frame.render_widget(status, left_chunks[0]);
 
             let body = Paragraph::new(mode_body(app.mode, &app.snapshot))
+                .style(Style::default().fg(Color::Rgb(218, 232, 235)).bg(PANEL))
                 .wrap(ratatui::widgets::Wrap { trim: true })
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
+                        .border_style(Style::default().fg(TEAL))
                         .title(app.mode.title()),
                 );
-            frame.render_widget(body, body_chunks[0]);
+            frame.render_widget(body, left_chunks[1]);
 
             let image_block = Block::default()
                 .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Rgb(44, 77, 91)))
                 .title(app.image_title);
             let inner = image_block.inner(body_chunks[1]);
             frame.render_widget(image_block, body_chunks[1]);
             let image_widget = StatefulImage::default().resize(Resize::Fit(None));
             frame.render_stateful_widget(image_widget, inner, &mut app.image_state);
 
-            let footer =
-                Paragraph::new("[tab]/[shift+tab] switch mode  [1-5] jump to mode  [q] quit");
+            let footer = Paragraph::new(Line::from(vec![
+                Span::styled(
+                    " TAB ",
+                    Style::default()
+                        .fg(BG)
+                        .bg(TEAL)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" switch mode   ", Style::default().fg(MUTED)),
+                Span::styled(
+                    "1-5",
+                    Style::default().fg(AMBER).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" jump   ", Style::default().fg(MUTED)),
+                Span::styled(
+                    "q / esc",
+                    Style::default().fg(AMBER).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" quit", Style::default().fg(MUTED)),
+            ]))
+            .style(Style::default().bg(BG));
             frame.render_widget(footer, chunks[2]);
         })?;
 

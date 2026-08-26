@@ -12,11 +12,16 @@
 //! (§101: OBSERVED marks are sharp/thin, not photographic).
 
 use liminal_ledger::{Event, SqliteLedger};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LedgerSnapshot {
     pub total_event_count: usize,
+    /// Number of observations per sensor stream, in stable display order.
+    pub stream_event_counts: BTreeMap<String, usize>,
+    /// The most recently appended event's kind and stream, if one exists.
+    pub latest_event: Option<(String, String)>,
     /// (x, y, confidence) for each joint in the most recent `camera` stream observation, if any.
     pub latest_camera_joints: Vec<(f64, f64, f64)>,
 }
@@ -61,8 +66,27 @@ pub fn read_ledger_snapshot(db_path: &Path) -> Option<LedgerSnapshot> {
     }
     let ledger = SqliteLedger::open(db_path, i64::MAX).ok()?;
     let events = ledger.events().ok()?;
+    let mut stream_event_counts = BTreeMap::new();
+    for event in &events {
+        if event.kind == "observation" {
+            if let Some(stream_id) = event.payload.get("stream_id").and_then(|v| v.as_str()) {
+                *stream_event_counts
+                    .entry(stream_id.to_string())
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+    let latest_event = events.last().and_then(|event| {
+        event
+            .payload
+            .get("stream_id")
+            .and_then(|value| value.as_str())
+            .map(|stream| (event.kind.clone(), stream.to_string()))
+    });
     Some(LedgerSnapshot {
         total_event_count: events.len(),
+        stream_event_counts,
+        latest_event,
         latest_camera_joints: extract_latest_camera_joints(&events),
     })
 }
@@ -148,6 +172,11 @@ mod tests {
 
         let snapshot = read_ledger_snapshot(&path).unwrap();
         assert_eq!(snapshot.total_event_count, 1);
+        assert_eq!(snapshot.stream_event_counts.get("camera"), Some(&1));
+        assert_eq!(
+            snapshot.latest_event,
+            Some(("observation".to_string(), "camera".to_string()))
+        );
         assert_eq!(snapshot.latest_camera_joints, vec![(0.3, 0.4, 0.7)]);
 
         std::fs::remove_file(&path).unwrap();
