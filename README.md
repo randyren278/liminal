@@ -41,7 +41,8 @@ never claimed beyond what is tested.
 | Sensorium discovery (`liminal doctor`): camera/audio/Wi-Fi/Bluetooth capability + permission state, no capture | WORKING | `app/Liminal` (`liminal-doctor` binary) |
 | Vision organ (`liminal-capture`): camera capture + 2D body pose extraction + IPC envelope emission, zero raw frames persisted | EXPERIMENTAL — builds and unit-tests clean, but real-camera capture has not yet been confirmed by a human running it and granting the permission prompt | `app/Liminal` (`liminal-capture` binary) |
 | `liminal-tui` mode skeleton + real terminal image/video rendering (Kitty/Sixel via `ratatui-image`) | WORKING | `crates/liminal-tui` |
-| Camera/audio/Wi-Fi/BLE capture organs, `liminald`, fusion | PLANNED | see [ROADMAP.md](ROADMAP.md) |
+| `liminald`: Unix-socket ingest daemon, validates + persists envelopes to `SqliteLedger` | WORKING — verified end-to-end with a real socket connection and real SQLite row, see `crates/liminald/examples/send_test_envelope.rs` | `crates/liminald` |
+| Passive/active acoustics, Wi-Fi/BLE capture organs, fusion, `liminal-tui` wired to live data | PLANNED | see [ROADMAP.md](ROADMAP.md) |
 
 ## Repository layout
 
@@ -53,8 +54,9 @@ crates/liminal-ledger/    hash-chain event log (in-memory + SQLite-backed), prov
 crates/liminal-ipc/       Protocol Buffers wire envelope + schema-version validation
 crates/liminal-cli/       `liminal` binary: privacy audit, event browsing, append-order event history
 crates/liminal-tui/       `liminal-tui` binary: PRIMARY interface (mode skeleton + real terminal image rendering)
+crates/liminald/          Unix-socket ingest daemon: validates + persists liminal-ipc envelopes to SqliteLedger
 proto/                    liminal.proto — the IPC wire contract
-app/Liminal/              Swift package: LiminalCore (testable) + liminal-doctor (Sensorium probe)
+app/Liminal/              Swift package: LiminalCore (testable) + liminal-doctor (Sensorium probe) + liminal-capture (Vision organ)
 checks/                   mutation guard, coverage gate, docs gate (see docs/ARCHITECTURE.md)
 ```
 
@@ -63,13 +65,16 @@ checks/                   mutation guard, coverage gate, docs gate (see docs/ARC
 ```bash
 cargo test --workspace              # unit tests
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 11
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 12
 
 cd app/Liminal && swift test        # Swift unit tests (JSON schema, hashing)
 cd app/Liminal && swiftformat --lint .
 cd app/Liminal && swift run liminal-doctor --json   # real hardware probe, no permission prompts
 
 cargo run -p liminal-tui            # the TUI itself -- run this in a real terminal to see it
+
+cargo run -p liminald                                       # the ingest daemon
+cargo run -p liminald --example send_test_envelope          # sends it one real envelope (no hardware needed)
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how the pieces fit

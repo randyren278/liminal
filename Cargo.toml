@@ -8,6 +8,7 @@ members = [
     "crates/liminal-ipc",
     "crates/liminal-cli",
     "crates/liminal-tui",
+    "crates/liminald",
 ]
 
 [workspace.package]

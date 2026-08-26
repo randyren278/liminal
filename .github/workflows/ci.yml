@@ -85,7 +85,7 @@ jobs:
         run: >-
           python3 checks/mutation_guard.py
           --manifest checks/mutations.json
-          --assert-min 11
+          --assert-min 12
 
   swift:
     name: Swift build + test (LiminalCore, liminal-doctor)
