@@ -74,9 +74,11 @@ sensors:
   `liminald` runtime concern, not this crate's.
 - **`crates/liminal-cli`** — the `liminal` binary's data-layer-only
   subcommands: `privacy audit` (scans a `SqliteLedger`'s stored records for
-  forbidden keys), `events list`/`show`, and `explain <id>` (walks
-  `SqliteLedger`'s `previous_hash` chain back to genesis — see the gap note
-  below for why this doesn't use `ProvenanceGraph`).
+  forbidden keys), `events list`/`show`, and `events history <id>` (walks
+  `SqliteLedger`'s `previous_hash` chain back to genesis — an append-order/
+  integrity view, explicitly NOT a provenance/derivation query; it was
+  originally named `explain` and framed as §62 provenance drilldown, then
+  renamed after review caught that mismatch — see the gap note below).
 
 Everything else in the master plan — Sensorium discovery, the Swift sensor
 organs, calibration, fusion, the Spectral Canvas, the TUI, field-note
@@ -94,10 +96,13 @@ depend on":
    exercised by that crate's own tests; nothing persists a `depends_on`
    edge into SQLite.
 2. `SqliteLedger`'s `previous_hash` chain — every persisted `Event` already
-   links to its predecessor. `liminal-cli`'s `explain <id>` walks this
-   chain, which is real persisted data, but it's a linear history chain,
-   not the branching dependency graph `ProvenanceGraph` models (an Event
-   can only have one predecessor in the chain; the plan's real provenance
+   links to its predecessor. `liminal-cli`'s `events history <id>` walks
+   this chain, which is real persisted data, but it's the GLOBAL APPEND
+   ORDER (an integrity mechanism, §87), not a derivation graph: an
+   unrelated event from a different stream, appended between two related
+   ones, appears in the history exactly as if it were evidence. It is not
+   the branching dependency graph `ProvenanceGraph` models (an Event can
+   only have one predecessor in the chain; the plan's real provenance
    model, §62, is Observation → Event → Episode → Pattern →
    Interpretation, a many-to-one fan-in `ProvenanceGraph` is built for).
 

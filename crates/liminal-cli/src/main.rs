@@ -1,14 +1,25 @@
 //! `liminal` CLI: read-only data-layer inspection tools over a persisted `SqliteLedger`.
 //!
-//! Master plan reference: §82 (CLI Contract), §62 (Provenance Graph — see `explain` below for
-//! why this walks the hash chain rather than `liminal_ledger::ProvenanceGraph`), §133
-//! (`liminal privacy audit` behavior).
+//! Master plan reference: §82 (CLI Contract), §133 (`liminal privacy audit` behavior).
 //!
-//! `explain <id>` does not use `liminal_ledger::ProvenanceGraph`: that type is a separate,
-//! purely in-memory structure with no connection to `SqliteLedger` and no persisted
-//! `depends_on` edges to walk. Instead it walks the hash chain that IS persisted — each
-//! `Event.previous_hash` links to its predecessor's `hash` — back to the genesis event
-//! (`previous_hash == "0"`), which is a legitimate provenance drilldown over real data.
+//! ## `events history <id>` is NOT §62 provenance
+//!
+//! `Event.previous_hash` links each event to whatever was appended immediately before it, in
+//! GLOBAL APPEND ORDER across every stream and kind — it exists for hash-chain integrity
+//! (§87), not derivation. `events history <id>` walks that chain back to genesis
+//! (`previous_hash == "0"`) and is useful for append-order/integrity inspection, but it is NOT
+//! the §62 Provenance Graph: it does not tell you what evidence a claim was derived from, only
+//! what was written before it. An unrelated event from a different stream or sensor, if
+//! appended between two related ones, would appear in this history exactly as if it were
+//! evidence — because from the chain's point of view, it's indistinguishable from one.
+//!
+//! Real per-claim provenance (§62) needs an explicit `derived_from` edge model — recorded at
+//! write time, not inferred from append order — which does not exist yet. This command was
+//! originally named `explain` and framed as that provenance drilldown; it was renamed and
+//! re-scoped after a review caught the mismatch between what it claims and what it actually
+//! computes. `liminal_ledger::ProvenanceGraph` is the closer fit for real dependency-cascade
+//! provenance, but it is a separate, purely in-memory structure with no connection to
+//! `SqliteLedger` today (see `docs/ARCHITECTURE.md`'s "Known architectural gap" section).
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,12 +47,6 @@ enum Command {
         #[command(subcommand)]
         command: EventsCommand,
     },
-    /// Walk an event's provenance chain back to genesis.
-    Explain {
-        id: String,
-        #[arg(long)]
-        db: PathBuf,
-    },
 }
 
 #[derive(Subcommand)]
@@ -62,6 +67,13 @@ enum EventsCommand {
     },
     /// Show the full record for one event.
     Show {
+        id: String,
+        #[arg(long)]
+        db: PathBuf,
+    },
+    /// Walk an event's append-order hash-chain history back to genesis. NOT a provenance/
+    /// derivation graph -- see the module doc comment.
+    History {
         id: String,
         #[arg(long)]
         db: PathBuf,
@@ -100,9 +112,11 @@ fn show_event(db: &Path, id: &str) -> Result<Option<Event>, LedgerError> {
     Ok(ledger.events()?.into_iter().find(|e| e.id == id))
 }
 
-/// Walk the hash chain from the event `id` back to genesis. Returns `None` if `id` is unknown.
-/// The returned chain starts at `id` and ends at the genesis event (`previous_hash == "0"`).
-fn explain_chain(db: &Path, id: &str) -> Result<Option<Vec<Event>>, LedgerError> {
+/// Walk the append-order hash chain from the event `id` back to genesis. Returns `None` if `id`
+/// is unknown. The returned chain starts at `id` and ends at the genesis event
+/// (`previous_hash == "0"`). This is NOT a provenance/derivation query -- see the module doc
+/// comment for why.
+fn event_history(db: &Path, id: &str) -> Result<Option<Vec<Event>>, LedgerError> {
     let events = SqliteLedger::open(db, i64::MAX)?.events()?;
     let Some(start) = events.iter().find(|e| e.id == id) else {
         return Ok(None);
@@ -132,7 +146,9 @@ fn main() -> ExitCode {
         Command::Events {
             command: EventsCommand::Show { id, db },
         } => run_events_show(&db, &id),
-        Command::Explain { id, db } => run_explain(&db, &id),
+        Command::Events {
+            command: EventsCommand::History { id, db },
+        } => run_events_history(&db, &id),
     }
 }
 
@@ -204,8 +220,8 @@ fn run_events_show(db: &Path, id: &str) -> ExitCode {
     }
 }
 
-fn run_explain(db: &Path, id: &str) -> ExitCode {
-    match explain_chain(db, id) {
+fn run_events_history(db: &Path, id: &str) -> ExitCode {
+    match event_history(db, id) {
         Ok(Some(chain)) => {
             for event in &chain {
                 let ts_us = event.payload.get("ts_us").and_then(|v| v.as_i64());
@@ -398,8 +414,8 @@ mod tests {
     }
 
     #[test]
-    fn explain_walks_the_hash_chain_back_to_genesis() {
-        let path = temp_db_path("explain");
+    fn history_walks_the_hash_chain_back_to_genesis() {
+        let path = temp_db_path("history");
         {
             let mut ledger = SqliteLedger::open(&path, i64::MAX).unwrap();
             ledger.append_observation("obs_1", "wifi", 0).unwrap();
@@ -409,7 +425,7 @@ mod tests {
             ledger.append_belief("belief_1", "wifi", 1_000_100).unwrap();
         }
 
-        let chain = explain_chain(&path, "belief_1").unwrap().unwrap();
+        let chain = event_history(&path, "belief_1").unwrap().unwrap();
         let ids: Vec<&str> = chain.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["belief_1", "obs_2", "obs_1"]);
         assert_eq!(chain.last().unwrap().previous_hash, "0");
@@ -417,14 +433,40 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
     }
 
+    /// This is the failure mode the module doc comment warns about: an unrelated event from a
+    /// different stream, appended between two related ones, appears in the append-order history
+    /// exactly as if it were evidence for the later claim. `events history` cannot and does not
+    /// claim otherwise -- this test documents that limitation rather than hiding it.
     #[test]
-    fn explain_returns_none_for_unknown_id() {
-        let path = temp_db_path("explain-missing");
+    fn history_includes_unrelated_interleaved_events_because_it_is_append_order_not_provenance() {
+        let path = temp_db_path("history-interleaved");
+        {
+            let mut ledger = SqliteLedger::open(&path, i64::MAX).unwrap();
+            ledger.append_observation("obs_1", "wifi", 0).unwrap();
+            ledger
+                .append_observation("cam_1", "camera", 500_000)
+                .unwrap();
+            ledger
+                .append_observation("obs_2", "wifi", 1_000_000)
+                .unwrap();
+            ledger.append_belief("belief_1", "wifi", 1_000_100).unwrap();
+        }
+
+        let chain = event_history(&path, "belief_1").unwrap().unwrap();
+        let ids: Vec<&str> = chain.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["belief_1", "obs_2", "cam_1", "obs_1"]);
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn history_returns_none_for_unknown_id() {
+        let path = temp_db_path("history-missing");
         {
             SqliteLedger::open(&path, i64::MAX).unwrap();
         }
 
-        assert!(explain_chain(&path, "nope").unwrap().is_none());
+        assert!(event_history(&path, "nope").unwrap().is_none());
 
         std::fs::remove_file(&path).unwrap();
     }
