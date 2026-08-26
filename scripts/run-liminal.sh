@@ -74,6 +74,14 @@ fi
 if [[ "$CAPTURE_ENABLED" -eq 1 ]]; then
     swift run --package-path app/Liminal --configuration debug liminal-capture >"$CAPTURE_LOG" 2>&1 &
     CAPTURE_PID=$!
+    for _ in $(seq 1 20); do
+        if ! kill -0 "$CAPTURE_PID" 2>/dev/null; then
+            printf 'liminal-capture exited during startup:\n' >&2
+            sed -n '1,160p' "$CAPTURE_LOG" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
     printf '  capture: running (permission prompts and sensor logs are in %s)\n' "$CAPTURE_LOG"
 else
     printf '  capture: disabled (--no-capture)\n'
