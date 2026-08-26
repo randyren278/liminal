@@ -1,6 +1,8 @@
-# full-reign CI -- Rust. Two jobs on purpose: the mutation guard is
-# meaningless unless the unmutated suite is already green, so it is gated on
-# `deterministic`.
+# full-reign CI -- Rust + Swift. The mutation guard is meaningless unless
+# the unmutated suite is already green, so it is gated on `deterministic`.
+# `swift` is independent of both -- it covers app/Liminal, which has no
+# mutation manifest of its own (its hardware probes aren't testable in CI;
+# only the JSON-schema and hashing logic under LiminalCore is).
 name: CI
 
 on:
@@ -84,3 +86,31 @@ jobs:
           python3 checks/mutation_guard.py
           --manifest checks/mutations.json
           --assert-min 11
+
+  swift:
+    name: Swift build + test (LiminalCore, liminal-doctor)
+    runs-on: macos-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app/Liminal
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/cache@v4
+        with:
+          path: app/Liminal/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('app/Liminal/Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      - name: Install swiftformat
+        run: brew install swiftformat
+
+      - name: Format check
+        run: swiftformat --lint .
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
