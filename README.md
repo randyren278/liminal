@@ -31,11 +31,6 @@ timeline. Raw video and audio do not enter the ledger.
 
 ## See it working
 
-![Liminal spectral artwork renderer](docs/screenshots/liminal-tui-art-demo.png)
-
-The explicit `--demo` path uses synthetic values to exercise the same artwork
-without reading the ledger. It is a renderer showcase, not sensor evidence.
-
 ![Liminal live sensorium in macOS Terminal](docs/screenshots/liminal-tui-terminal-live.png)
 
 This real macOS Terminal capture proves the live ledger path and the corrected
@@ -123,15 +118,6 @@ scripts/run-liminal.sh
 macOS may ask for camera, microphone, and Bluetooth access. Capture is
 optional; the daemon and TUI remain useful with `--no-capture` and an existing
 ledger.
-
-For a deliberately synthetic renderer check, use the explicitly labeled demo:
-
-```bash
-cargo run -p liminal-tui -- --demo --demo-frames 10
-```
-
-The demo never reads or displays ledger data and must not be used as evidence
-that live sensors are connected.
 
 ## Development
 
