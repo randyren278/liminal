@@ -5,12 +5,11 @@ use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
-use liminal_ledger::{default_db_path, SqliteLedger, DEFAULT_MAX_SILENT_GAP_US};
-use liminald::{
-    ingest_envelope, prepare_socket_path, read_length_delimited_envelope, socket_path_for_uid,
-};
+use liminal_ledger::{SqliteLedger, DEFAULT_MAX_SILENT_GAP_US};
+use liminald::{ingest_envelope, read_length_delimited_envelope};
 
 const MAX_PENDING_CONNECTIONS: usize = 16;
+#[cfg(not(test))]
 const CONNECTION_WORKERS: usize = 4;
 
 fn connection_queue() -> (SyncSender<UnixStream>, Arc<Mutex<Receiver<UnixStream>>>) {
@@ -82,6 +81,7 @@ where
     }
 }
 
+#[cfg(not(test))]
 fn spawn_connection_workers(
     receiver: &Arc<Mutex<Receiver<UnixStream>>>,
     ledger: &Arc<Mutex<SqliteLedger>>,
@@ -97,6 +97,9 @@ fn spawn_connection_workers(
 fn main() {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixListener;
+
+    use liminal_ledger::default_db_path;
+    use liminald::{prepare_socket_path, socket_path_for_uid};
 
     let uid = unsafe { libc::getuid() };
     let socket_path = socket_path_for_uid(uid);
@@ -283,10 +286,5 @@ mod tests {
         let (server, _client) = UnixStream::pair().unwrap();
 
         accept_connections(vec![Ok(server)], &sender);
-    }
-
-    #[test]
-    fn worker_count_is_nonzero() {
-        assert!(CONNECTION_WORKERS > 0);
     }
 }
