@@ -264,7 +264,10 @@ mod tests {
         let (sender, receiver) = sync_channel(2);
         let (server, _client) = UnixStream::pair().unwrap();
         let incoming = vec![
-            Err(io::Error::new(io::ErrorKind::ConnectionAborted, "synthetic")),
+            Err(io::Error::new(
+                io::ErrorKind::ConnectionAborted,
+                "synthetic",
+            )),
             Ok(server),
         ];
 
