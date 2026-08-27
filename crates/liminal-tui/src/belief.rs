@@ -96,6 +96,35 @@ mod tests {
         assert!(belief.occupancy_probability > 0.7);
         assert_eq!(belief.observed_modalities, 2);
         assert!(belief.disagreement > 0.0);
+        assert_eq!(belief.state, BeliefState::Contested);
+    }
+
+    #[test]
+    fn bluetooth_participates_and_agreeing_modalities_are_stable() {
+        let belief = derive_belief(&TelemetrySnapshot {
+            camera_presence: Some(0.5),
+            audio_vad: Some(0.5),
+            bluetooth_cluster_count: Some(2.0),
+            ..TelemetrySnapshot::default()
+        });
+        assert_eq!(belief.observed_modalities, 3);
+        assert_eq!(belief.occupancy_probability, 0.5);
+        assert_eq!(belief.disagreement, 0.0);
+        assert_eq!(belief.state, BeliefState::Stable);
+        assert_eq!(belief.sensor_health, 1.0);
+    }
+
+    #[test]
+    fn supporting_modalities_are_clamped_to_their_valid_probability_range() {
+        let belief = derive_belief(&TelemetrySnapshot {
+            audio_vad: Some(2.0),
+            bluetooth_cluster_count: Some(-4.0),
+            ..TelemetrySnapshot::default()
+        });
+        assert_eq!(belief.observed_modalities, 2);
+        assert!(belief.occupancy_probability > 0.5);
+        assert!(belief.occupancy_probability < 0.6);
+        assert_eq!(belief.state, BeliefState::Contested);
     }
 
     #[test]
