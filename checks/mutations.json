@@ -9,7 +9,10 @@
     "crates/liminal-ledger/src/lib.rs",
     "crates/liminal-memory/src/lib.rs",
     "crates/liminal-schema/src/sensorium.rs",
-    "crates/liminald/src/lib.rs"
+    "crates/liminald/src/lib.rs",
+    "crates/liminal-tui/src/belief.rs",
+    "crates/liminal-tui/src/field_notes.rs",
+    "crates/liminald/src/main.rs"
   ],
   "mutations": [
     {
@@ -65,8 +68,8 @@
       "id": "sqlite-ledger-accepts-corrupted-chain-on-reopen",
       "file": "crates/liminal-ledger/src/lib.rs",
       "invariant": "SqliteLedger::verify_chain must never silently accept a corrupted/torn hash on reopen -- a stored event whose hash does not match its recomputed hash must always be reported as a broken chain.",
-      "find": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if expected != event.hash {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }",
-      "replace": "            let expected = compute_hash(&previous_hash, &event.payload);\n            if false {\n                return Err(LedgerError::ChainBroken(event.sequence));\n            }\n            previous_hash = event.hash;\n        }"
+      "find": "            let expected = compute_serialized_hash(&previous_hash, &payload);\n            if expected != event_hash {\n                return Err(LedgerError::ChainBroken(sequence));\n            }\n            previous_hash = event_hash;\n        }",
+      "replace": "            let expected = compute_serialized_hash(&previous_hash, &payload);\n            if false {\n                return Err(LedgerError::ChainBroken(sequence));\n            }\n            previous_hash = event_hash;\n        }"
     },
     {
       "id": "retention-past-tier-never-deleted",
@@ -95,6 +98,223 @@
       "invariant": "The liminald socket directory is always created with 0700 permissions (owner-only) -- never a broader mode that would let other local users on the machine read or connect to the IPC socket.",
       "find": "    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))",
       "replace": "    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))"
+    },
+    {
+      "id": "belief-camera-signal-must-dominate",
+      "file": "crates/liminal-tui/src/belief.rs",
+      "invariant": "A positive camera presence signal must remain the dominant occupancy evidence in the first-pass fusion heuristic.",
+      "find": "        weighted_sum += presence * 0.65;",
+      "replace": "        weighted_sum += presence * 0.0;"
+    },
+    {
+      "id": "field-note-layer-labels-cannot-be-erased",
+      "file": "crates/liminal-tui/src/field_notes.rs",
+      "invariant": "Every field note must display its epistemic category so imagined text cannot be mistaken for a fact.",
+      "find": "        output.push_str(note.layer.label());",
+      "replace": "        output.push_str(\"FACT\");"
+    },
+    {
+      "id": "daemon-fusion-record-is-not-an-observation",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "A daemon-derived fusion result must be persisted as a belief record, never mislabeled as a raw sensor observation.",
+      "find": "            ledger.append_belief_with_features_and_evidence(",
+      "replace": "            ledger.append_observation_with_features("
+    },
+    {
+      "id": "daemon-replayed-message-is-idempotent",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "A replayed envelope with an already persisted message ID must not create a duplicate observation or fusion belief.",
+      "find": "        .any(|event| event.id == envelope.message_id)",
+      "replace": "        .any(|event| false)"
+    },
+    {
+      "id": "daemon-rejects-oversized-frames-before-allocation",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "The daemon must reject a length-delimited frame above its maximum before allocating the declared payload size.",
+      "find": "    if len > MAX_FRAME_BYTES {",
+      "replace": "    if false {"
+    },
+    {
+      "id": "daemon-records-monotonic-sequence-gaps",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "A forward jump in a stream's persisted monotonic sequence must create an explicit sensor-gap record.",
+      "find": "        if envelope.monotonic_sequence > last_sequence.saturating_add(1) {",
+      "replace": "        if false {"
+    },
+    {
+      "id": "daemon-connection-queue-is-bounded",
+      "file": "crates/liminald/src/main.rs",
+      "invariant": "The daemon connection queue must reject work beyond its fixed pending limit instead of allowing unbounded queued connections.",
+      "find": "    let (sender, receiver) = sync_channel(MAX_PENDING_CONNECTIONS);",
+      "replace": "    let (sender, receiver) = sync_channel(0);"
+    },
+    {
+      "id": "calibration-label-matching-honors-window-boundary",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "A human label exactly at the configured timestamp matching window is eligible for calibration scoring.",
+      "find": "                !used_beliefs[*index] && (label.ts_us - *ts_us).abs() <= max_offset_us",
+      "replace": "                !used_beliefs[*index] && (label.ts_us - *ts_us).abs() < max_offset_us"
+    },
+    {
+      "id": "tui-occupancy-events-only-use-fusion-beliefs",
+      "file": "crates/liminal-tui/src/ledger_view.rs",
+      "invariant": "The CUI must segment occupancy only from daemon fusion beliefs, never from raw observations or render-fallback streams.",
+      "find": "        .filter(|event| {\n            event.kind == \"belief\"\n                && event.payload.get(\"stream_id\").and_then(|v| v.as_str()) == Some(\"fusion\")\n        })\n        .filter_map(|event| {",
+      "replace": "        .filter(|event| {\n            event.kind != \"belief\"\n                && event.payload.get(\"stream_id\").and_then(|v| v.as_str()) == Some(\"fusion\")\n        })\n        .filter_map(|event| {"
+    },
+    {
+      "id": "fusion-freshness-cannot-be-ignored",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "A stale sensor contribution must decay out of fusion rather than remaining authoritative.",
+      "find": "        weighted_sum += value * 0.65 * health[0].unwrap_or(0.0);",
+      "replace": "        weighted_sum += value * 0.65;"
+    },
+    {
+      "id": "fusion-contradiction-is-contested",
+      "file": "crates/liminald/src/lib.rs",
+      "invariant": "Strongly contradictory live modalities must be labeled contested rather than reported as stable.",
+      "find": "    let state = if disagreement > 0.45 || average_health < 0.25 {",
+      "replace": "    let state = if false {"
+    },
+    {
+      "id": "sqlite-provenance-returns-explicit-sources",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "Persisted provenance lookup must return explicit source IDs, never append-order predecessors or derived IDs.",
+      "find": "            \"SELECT source_id FROM provenance_edges WHERE derived_id = ?1 ORDER BY rowid ASC\",",
+      "replace": "            \"SELECT derived_id FROM provenance_edges WHERE derived_id = ?1 ORDER BY rowid ASC\","
+    },
+    {
+      "id": "spectral-camera-presence-is-visible",
+      "file": "crates/liminal-tui/src/telemetry_frame.rs",
+      "invariant": "A camera presence feature must materially affect the telemetry bitmap rather than being silently ignored.",
+      "find": "    let camera = telemetry.camera_presence.unwrap_or(0.0).clamp(0.0, 1.0);",
+      "replace": "    let camera = 0.0;"
+    },
+    {
+      "id": "memory-replay-is-idempotent",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "Repeating an explicit memory replay must not append duplicate deterministic Episode or Pattern records.",
+      "find": "    !existing_ids.contains(id)",
+      "replace": "    true"
+    },
+    {
+      "id": "agent-run-requires-structured-evidence",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "A field-note agent run must refuse to persist when no deterministic fusion or memory evidence exists.",
+      "find": "    if input_ids.is_empty() {",
+      "replace": "    if false {"
+    },
+    {
+      "id": "provenance-tree-follows-explicit-edges",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "Provenance-tree navigation must follow persisted source edges rather than the append-order hash chain.",
+      "find": "        let mut sources = ledger.provenance_sources(&current_id)?;",
+      "replace": "        let mut sources = Vec::new();"
+    },
+    {
+      "id": "export-refuses-forbidden-payloads",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "A local export must refuse persisted payloads containing privacy-forbidden keys.",
+      "find": "        if !scan_json_for_forbidden_keys(&event.payload).is_empty() {",
+      "replace": "        if false {"
+    },
+    {
+      "id": "retention-preview-uses-policy-eligibility",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "Retention preview must use the canonical retention policy eligibility function and never invent a separate cutoff.",
+      "find": "    eligible_for_deletion(policy, kind, recorded_at_us, now_us)",
+      "replace": "    false"
+    },
+    {
+      "id": "tui-demo-mode-is-ledger-independent",
+      "file": "crates/liminal-tui/src/main.rs",
+      "invariant": "Explicit TUI demo mode must remain synthetic and never read or display live ledger data.",
+      "find": "        if self.demo_only {",
+      "replace": "        self.snapshot = if false {"
+    },
+    {
+      "id": "tui-ledger-errors-are-not-demo-data",
+      "file": "crates/liminal-tui/src/main.rs",
+      "invariant": "An existing unreadable ledger must be shown as an explicit error and never presented as synthetic demo data.",
+      "find": "    if let Some(error) = ledger_error {",
+      "replace": "    if false {"
+    },
+    {
+      "id": "tui-agent-output-preserves-epistemic-labels",
+      "file": "crates/liminal-tui/src/field_notes.rs",
+      "invariant": "Persisted Tier-0 agent output must retain its stored epistemic layer and review status in the read-only CUI.",
+      "find": "                    run.role, run.layer, run.status, run.evidence_count, run.text",
+      "replace": "                    run.role, \"FACT\", \"COMPLETE\", run.evidence_count, run.text"
+    },
+    {
+      "id": "tui-calibration-requires-explicit-labels",
+      "file": "crates/liminal-tui/src/main.rs",
+      "invariant": "The CUI must not present sensor output as calibration ground truth when no human or approved reference labels were supplied.",
+      "find": "No human or approved reference labels were supplied. This view will not treat sensor output as ground truth.",
+      "replace": "Human labels supplied."
+    },
+    {
+      "id": "tui-calibration-does-not-retune-live-heuristic",
+      "file": "crates/liminal-tui/src/calibration_view.rs",
+      "invariant": "Displaying an offline calibration report must state that it does not retune the live heuristic.",
+      "find": "This is an offline score against human/reference labels. It does not retune the live heuristic.",
+      "replace": "retunes the live heuristic"
+    },
+    {
+      "id": "tui-rates-require-a-real-time-span",
+      "file": "crates/liminal-tui/src/ledger_view.rs",
+      "invariant": "The CUI must not infer a sensor cadence from a single timestamp or a zero-duration observation span.",
+      "find": "if span_seconds > 0.0 {",
+      "replace": "if true {"
+    },
+    {
+      "id": "tui-wifi-density-reaches-spectral-frame",
+      "file": "crates/liminal-tui/src/telemetry_frame.rs",
+      "invariant": "Wi-Fi network density must contribute to the rendered spectral field rather than remaining text-only telemetry.",
+      "find": "    let wifi_density = bar(telemetry.wifi_network_count, 0.0, 20.0);",
+      "replace": "    let wifi_density = 0.0;"
+    },
+    {
+      "id": "tui-bluetooth-rssi-reaches-spectral-frame",
+      "file": "crates/liminal-tui/src/telemetry_frame.rs",
+      "invariant": "Bluetooth mean RSSI must contribute to the rendered spectral field rather than remaining text-only telemetry.",
+      "find": "    let ble_rssi = bar(telemetry.bluetooth_mean_rssi, -100.0, -20.0);",
+      "replace": "    let ble_rssi = 0.0;"
+    },
+    {
+      "id": "tui-provenance-drilldown-preserves-sources",
+      "file": "crates/liminal-tui/src/main.rs",
+      "invariant": "The CUI historical record drill-down must retain explicit provenance source IDs rather than displaying a derived record without its evidence links.",
+      "find": "                record.provenance_sources.join(\", \")",
+      "replace": "        \"none recorded\".to_string()"
+    },
+    {
+      "id": "sqlite-lock-is-not-a-successful-append",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "A temporary SQLite lock must surface as an append error rather than being reported as a successful canonical write.",
+      "find": "        )?;\n        for source_id in source_ids {",
+      "replace": "        ).ok();\n        for source_id in source_ids {"
+    },
+    {
+      "id": "privacy-audit-scans-debug-captures",
+      "file": "crates/liminal-cli/src/main.rs",
+      "invariant": "The privacy audit must inspect the canonical debug-captures directory for raw media files.",
+      "find": "    for path in raw_capture_files(&debug_captures).map_err(|error| {",
+      "replace": "    for path in raw_capture_files(&PathBuf::from(\"/tmp/liminal-no-debug-captures\")).map_err(|error| {"
+    },
+    {
+      "id": "tui-memory-timeline-bounds-pixels",
+      "file": "crates/liminal-tui/src/memory_frame.rs",
+      "invariant": "The CUI memory timeline must clamp normalized timestamps before converting them to pixel coordinates.",
+      "find": ".clamp(0.0, 1.0)",
+      "replace": ".max(0.0)"
+    },
+    {
+      "id": "sqlite-privacy-erase-removes-selected-records",
+      "file": "crates/liminal-ledger/src/lib.rs",
+      "invariant": "A confirmed privacy erase must remove every selected event rather than leaving the source payload in the canonical ledger.",
+      "find": "            transaction.execute(\"DELETE FROM events WHERE id = ?1\", [id])?;",
+      "replace": "            let _ = id;"
     }
   ]
 }

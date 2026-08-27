@@ -38,3 +38,23 @@ public struct BluetoothScanWindow: Codable, Equatable {
 public func pseudonymizeBlePeripheral(key: Data, identifier: String) -> String {
     hmacSha256Hex(key: key, message: identifier, prefix: "ble")
 }
+
+/// Convert the bounded acceptance state into a diagnostic that distinguishes an unavailable
+/// startup path from a completed scan that found no advertisers. A scan window with zero clusters
+/// is not a Bluetooth observation and must not be counted as one.
+public func bluetoothAcceptanceStatus(
+    startupStatus: String,
+    discoveredSampleCount: Int,
+    discoveredPeripheralCount: Int = 0,
+) -> String {
+    if discoveredSampleCount > 0 {
+        return "observed"
+    }
+    if discoveredPeripheralCount > 0, startupStatus != "running" {
+        return "advertisers_detected_keychain_unavailable"
+    }
+    if startupStatus == "running" {
+        return "no_advertisers_observed"
+    }
+    return startupStatus
+}

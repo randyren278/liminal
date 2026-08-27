@@ -1,88 +1,43 @@
 # Feature Audit
 
-Per `full-reign` Phase 2. Every feature that exists in this repository,
-checked against: is it wired up, is it tested, is it mutation-guarded, is it
-documented, and does it actually work (verified by running it in this
-session, not by reading the code).
+Current-state audit for the full-reign build. Each feature is checked for
+wiring, tests, mutation coverage where the invariant is safety-critical,
+documentation, and a runnable proof path.
 
-This audit is short because the repository is young: as of this commit, the
-entire implementation is the hardware-independent canonical-state core
-described in `docs/ARCHITECTURE.md`. Nothing from the Swift/sensor/GUI side
-of the master plan exists yet.
+| Area | Wired and verified behavior | Evidence and remaining boundary |
+|---|---|---|
+| `liminal-schema` | Epistemic layers, claim/evidence boundaries, and agent-role restrictions | Rust tests and 2 mutation checks pass; richer provenance types remain future work |
+| `liminal-policy` | BLE HMAC pseudonyms, Wi-Fi Mode A sanitization, space-anchor downgrade, retention decisions | Rust tests and 3 mutation checks pass; Wi-Fi Mode B is not implemented |
+| `liminal-ledger` | Hash-chained in-memory and SQLite persistence with open-time crash recovery, migrations, explicit SQLite provenance edges, confirmation-gated erase cascade, sensor-gap state, derived observations, beliefs, and structural records | Rust tests and ledger mutation checks pass; automatic retention workers remain future work |
+| `liminal-memory` | Hysteresis occupancy segmentation, gap merging, deterministic Event → Episode → Pattern replay, and offline labeled calibration scoring | Rust tests pass; replay is structural only and no human-labeled trial has been collected, so the heuristic and recurrence interpretation are not calibrated |
+| `liminald` | Unix-socket ingest, schema/JSON/frame validation, per-stream gap detection, replay deduplication, bounded connection queue, freshness-weighted fusion with explicit stable/contested state | Rust tests and daemon mutation checks pass; contradictory modalities are contested, stale inputs decay out, and an existing unacknowledged historical gap suppresses new fusion beliefs |
+| `liminal-cli` | Privacy audit, event listing/show, append-order history, explicit provenance-source lookup, calibration scoring, operator-only sensor-gap recovery, explicit memory replay, and Tier-0 agent runs | Rust tests pass; provenance is separate from hash-chain history, calibration reports never retune the live model, recovery appends acknowledgment events instead of deleting or bridging history, replay writes only structural records, and agent runs require structured evidence |
+| `liminal-capture` | Real camera pose, microphone DSP, Wi-Fi Mode A, and Bluetooth coordinator emit derived IPC envelopes; sequences are independent and durable per stream | Swift tests/build and live launcher run pass; camera/microphone/Wi-Fi delivery observed on this Mac, and the Bluetooth radio independently reported three advertiser discoveries; derived Bluetooth emission still fails closed when the Keychain key is unavailable |
+| `liminal-doctor` | Non-prompting capability probe plus bounded `--live --duration=N --json` acceptance | Swift tests/build pass; live acceptance reports derived counts/statuses only and never stores raw media |
+| `liminal-tui` | SPECTRAL, BELIEF, MEMORY, FIELD NOTES, REFERENCE, and CALIBRATION modes; live SQLite polling; telemetry-driven bitmap field using all derived feature values; recent observation rates; derived pose skeleton; nonvisual vision-off path; pause/resume; diagnostics; displayed belief evidence IDs; bounded persisted Tier-0 drafts; historical record/provenance drilldown; explicit synthetic demo mode | 52 focused Rust tests pass; real terminal runs rendered live telemetry and the labeled demo bitmap, then exited cleanly |
+| Runtime launcher | Starts daemon, capture, and TUI together; cleans up child processes and socket | `scripts/run-liminal.sh` live run added observations, created no new cross-stream gaps, and left no Liminal processes/socket |
 
-> **Update (post-Phase-3):** the six items below are this audit's original
-> Phase-2 snapshot, left as written. ROADMAP.md's approved items have since
-> been built: `liminal-memory`, `liminal-ipc`, `liminal-cli`, SQLite-backed
-> ledger persistence, retention policy, and `SensoriumProfile` all now
-> exist. Two of the specific gaps noted below are now partially closed —
-> `liminal-ledger`'s "no persistence" gap (SQLite is now implemented, though
-> `ProvenanceGraph` remains disconnected from it — see
-> `docs/ARCHITECTURE.md`'s "Known architectural gap" section) and
-> `liminal-policy`'s "no CLI surface" gap (`liminal privacy audit` now
-> exists in `crates/liminal-cli`). This audit is not being rewritten to
-> pretend it always described the current state — a fresh audit against the
-> new crates is future work, not this one retrofitted.
+## Safety and privacy proof
 
-## `crates/liminal-schema` — epistemic layers & agent-role boundary
+- `cargo clippy --workspace --all-targets -- -D warnings` is clean.
+- `cargo fmt --all -- --check`, `git diff --check`, and the documentation gate
+  pass.
+- The mutation manifest contains 43 critical invariants. The latest full
+  42-case run killed every prior invariant with zero survivors, and the new
+  SQLite erase invariant independently killed in its scoped ledger/CLI guard;
+  CI's ratchet now requires all 43 in the next full sweep.
+- The ledger contains observations, derived features, and explicitly requested
+  structural memory records only. No raw camera
+  frames, PCM audio, SSIDs, or Bluetooth names are written by the capture
+  path.
 
-| Check | Result |
-|---|---|
-| Wired | Yes — standalone crate, no dead code, all public items exercised by tests |
-| Tested | Yes — 7 unit tests |
-| Mutation-guarded | Yes — 2 of the crate's 2 core invariants (imagined-evidence boundary, agent-role layer boundary) |
-| Documented | Yes — module doc comments cite plan §§ directly; covered in `docs/ARCHITECTURE.md` |
-| Actually works | Verified: `cargo test -p liminal-schema` → 7 passed, ran in this session |
+## Remaining plan work
 
-**Gap:** only `Claim`/`Evidence`/`AgentRole` exist. The plan's richer types
-(`Observation`, `BeliefFrame`, `Event`, `Episode`, `Pattern`,
-`Interpretation` — §50–§61) are not yet modeled. See ROADMAP item 1.
-
-## `crates/liminal-policy` — privacy & space-anchor policy
-
-| Check | Result |
-|---|---|
-| Wired | Yes |
-| Tested | Yes — 8 unit tests |
-| Mutation-guarded | Yes — 3 of 3 core invariants (BLE HMAC, Wi-Fi Mode A key leakage, space-anchor invalidation) |
-| Documented | Yes |
-| Actually works | Verified: `cargo test -p liminal-policy` → 8 passed, ran in this session |
-
-**Gap:** `pseudonymize` covers BLE; Wi-Fi Mode B stable pseudonyms (§36) are
-not implemented (Mode A anonymous aggregate is the default and only mode
-today, which is spec-compliant but incomplete). No `liminal privacy audit`
-CLI surface yet — the scanning function exists as a library call only.
-
-## `crates/liminal-ledger` — event ledger & provenance
-
-| Check | Result |
-|---|---|
-| Wired | Yes |
-| Tested | Yes — 7 unit tests |
-| Mutation-guarded | Yes — 2 of 2 core invariants (erase cascade, sensor-gap bridging) |
-| Documented | Yes |
-| Actually works | Verified: `cargo test -p liminal-ledger` → 7 passed, ran in this session |
-
-**Gap:** no persistence (SQLite, §84) — the ledger and provenance graph are
-in-memory only. No crash-recovery/replay (§88) yet since there is nothing to
-recover from disk. `ProvenanceGraph` and `Ledger` are separate types that
-don't yet share state (a real erase would need to invalidate ledger events,
-not just a standalone graph).
-
-## Everything else in the master plan
-
-Sensorium discovery (L2), the native permission shell (L3), the Swift
-sensor organs (L5–L9, camera/audio/Wi-Fi/BLE), space calibration (L10), the
-nonvisual baseline (L11), fusion (L12), the Spectral Canvas (L14), the TUI
-(L15), field-note agents (L16), the historical memory UI (L17), the 7- and
-30-day field trials (L20, L23), and packaging (L24) are **not started**.
-None of this is dead code to flag — it simply does not exist yet. See
-`ROADMAP.md` for what's next and why the Swift/hardware side is out of
-autonomous reach in this environment.
-
-## Repository hygiene
-
-- `cargo fmt --all -- --check` — clean.
-- `cargo clippy --workspace --all-targets -- -D warnings` — clean, zero warnings.
-- No secrets, no `.env`, no committed credentials.
-- `.gitignore` excludes `target/`, Xcode build artifacts, `Package.resolved`.
-- Git history so far: 3 commits on branch full-reign/2026-08-25, `main` untouched.
+The remaining master-plan items are human-labeled calibration and nonvisual
+baseline trials, active acoustic probing, richer fusion health/OOD behavior,
+full historical provenance navigation beyond the bounded 32-record
+drill-down, durable retention and export workers, and seven-/thirty-day
+trials. Recovery and privacy boundaries are implemented and verified, but
+they do not substitute for those human-dependent trials.
+These are intentionally not claimed by the current CUI or its synthetic/unit
+test evidence.

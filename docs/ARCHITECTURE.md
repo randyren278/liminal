@@ -19,25 +19,25 @@ only this diagram's shape changed, not the privacy posture.
 ```mermaid
 flowchart TB
     subgraph Swift["Liminal capture daemon (Swift, headless, no window)"]
-        Doctor["liminal-doctor: Sensorium probe (built, no capture)"]
-        Sensors["liminal-capture: camera+pose, mic+acoustics, Wi-Fi Mode A, Bluetooth clusters (built, EXPERIMENTAL -- unverified by a human yet)"]
+        Doctor["liminal-doctor: Sensorium probe + opt-in live acceptance"]
+        Sensors["liminal-capture: camera+pose, mic+acoustics, Wi-Fi Mode A, Bluetooth clusters (built, EXPERIMENTAL -- live delivery observed; calibration remains)"]
     end
-    subgraph Rust["liminald (Rust) -- ingest-only skeleton, built"]
+        subgraph Rust["liminald (Rust) -- ingest + transparent fusion, built"]
         IPC["liminal-ipc: wire envelope, schema-version validation"]
         Ledger["liminal-ledger: hash-chain events (in-memory + SQLite), erase cascade"]
         Policy["liminal-policy: pseudonymization, privacy audit, space anchor, retention"]
         Schema["liminal-schema: epistemic layers, agent-role boundary, sensorium profile"]
-        Memory["liminal-memory: occupancy segmentation (not wired to ingest yet)"]
+        Memory["liminal-memory: occupancy segmentation and structural replay projected into TUI"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
-    TUI["liminal-tui: PRIMARY interface -- reads real ledger data (REFERENCE mode skeleton)"]
+    TUI["liminal-tui: PRIMARY interface -- telemetry field, first-pass BELIEF, REFERENCE skeleton"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors -->|"real IPC envelope over Unix socket -- verified end-to-end with a manual test client"| IPC
     IPC --> Ledger
     Ledger --> Policy
     Ledger --> Schema
-    Ledger -.-> Memory
+    Ledger --> Memory
     Ledger --> CLI
     Ledger -->|"reads liminal.db directly, no socket -- polls a few times/sec"| TUI
 ```
@@ -54,8 +54,12 @@ so far:
   claims in its permitted layer. Also carries `SensoriumProfile` (§22): the
   data shape a future Swift probe will report hardware capabilities into.
 - **`crates/liminal-memory`** — Observation → Event segmentation (§58):
-  hysteresis-based occupancy transitions with gap merging, over a synthetic
-  probability time series. Not yet wired to a live belief stream.
+  hysteresis-based occupancy transitions with gap merging, plus deterministic
+  read-only Event → Episode → Pattern replay projected from daemon fusion
+  beliefs into the TUI. It also provides an offline calibration evaluator
+  for explicit occupancy labels; it does not manufacture labels from sensor
+  observations or retune the live heuristic. The daemon's belief stream is
+  projected into the TUI as read-only occupancy Events.
 - **`crates/liminal-policy`** — HMAC-SHA256 pseudonymization for BLE
   identifiers, Wi-Fi Mode A sanitization (aggregate features only, no
   SSID/BSSID field exists on the output type), a recursive privacy-audit
@@ -69,22 +73,39 @@ so far:
   crash-recovery test). A separate in-memory `ProvenanceGraph` cascades
   invalidation from an erased source to every downstream
   Event/Episode/Pattern/Interpretation; it is not connected to
-  `SqliteLedger`'s persisted storage (see "Known architectural gap" below).
+  `SqliteLedger`'s persisted storage (see the provenance boundary below).
   A sensor-gap guard refuses to record belief across an unacknowledged
   sensor outage, on both ledger implementations.
 - **`crates/liminal-ipc`** — the Swift↔Rust wire contract: a Protocol
   Buffers envelope (§15) matching the exact field list the plan specifies,
   with schema-version rejection (§119) so a mismatched build can't silently
-  desync. No transport (reconnect, dedup, backpressure) yet — that's a
-  `liminald` runtime concern, not this crate's.
+  desync. Replayed message IDs are idempotent at ingest, so reconnects do not
+  duplicate observations or fusion beliefs. `liminald` also records explicit
+  sensor gaps for forward monotonic-sequence jumps and rejects frames above its
+  1 MiB allocation bound. A 16-slot synchronous connection queue applies
+  backpressure before worker creation can become unbounded.
 - **`crates/liminal-cli`** — the `liminal` binary's data-layer-only
   subcommands: `privacy audit` (scans a `SqliteLedger`'s stored records for
-  forbidden keys), `events list`/`show`, and `events history <id>` (walks
+  forbidden keys and the canonical debug-captures directory for raw media),
+  `events list`/`show`, `events provenance <id>` and
+  `events provenance-tree <id>` (read explicit source edges), and
+  `privacy erase --since-us ... --until-us ... --confirm` (explicitly remove a
+  timestamp range and cascade to its dependents), and
+  `events history <id>` (walks
   `SqliteLedger`'s `previous_hash` chain back to genesis — an append-order/
   integrity view, explicitly NOT a provenance/derivation query; it was
   originally named `explain` and framed as §62 provenance drilldown, then
-  renamed after review caught that mismatch — see the gap note below).
-- **`crates/liminald`** — ROADMAP item 3: an ingest-only daemon skeleton.
+  renamed after review caught that mismatch — see the gap note below). It also
+  provides `calibration score` for explicit labels and
+  `recovery acknowledge-gaps` for reviewed sensor outages; recovery appends
+  auditable acknowledgment events and never erases or silently bridges
+  history.
+- **`crates/liminald`** — the ingest and first-pass fusion daemon. It validates
+  envelopes, persists derived observations, and appends a `fusion` belief record
+  containing only explainable probability/confidence/disagreement features,
+  freshness-weighted sensor health, and an explicit stable/contested state when
+  the participating sensor streams have no unacknowledged gap. Stale inputs
+  decay out rather than remaining authoritative. It never reads raw media.
   Prepares the §15 socket path (0700 directory, 0600 socket file — one of
   its two mutation-guarded invariants), binds a `UnixListener`, and for each
   connection decodes length-delimited `liminal-ipc` envelopes, validates
@@ -92,35 +113,73 @@ so far:
   `SqliteLedger::append_observation_with_features` (a new method added
   alongside this crate, since the existing `append_observation` discarded
   everything but `stream_id`/`ts_us` — real sensor features need to survive
-  ingest). No fusion, no belief frames — just validate and persist. Verified
-  end-to-end for real: `crates/liminald/examples/send_test_envelope.rs`
+  ingest). It then appends a transparent `fusion` belief record when the
+  participating streams have no unacknowledged gap. Verified end-to-end for
+  real: `crates/liminald/examples/send_test_envelope.rs`
   connects over a real Unix socket and the resulting SQLite row was
   inspected directly (not just asserted in a test) during development.
 - **`crates/liminal-tui`** — the primary interface (2026-08-26 pivot, above):
-  a mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE, §72) with
+  a six-mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE/CALIBRATION, §72) with
   `ratatui-image` proven to render real animated bitmap output over the
   terminal's graphics protocol (Kitty/Sixel, auto-detected; halfblock
   fallback otherwise). Now reads `liminal-ledger`'s real SQLite store
   directly (polling `default_db_path()`, no socket — the TUI and `liminald`
-  are both just readers/writers of the same file): REFERENCE mode renders a
-  real skeleton from the most recent `liminal-capture` pose observation
-  when one exists, and MEMORY mode shows the real total ingested event
-  count. When no real data has arrived yet, both modes fall back to an
-  explicitly-labeled synthetic demo pattern (§146 Demo Honesty). Correction
+  are both just readers/writers of the same file): capture allocates monotonic
+  IPC sequence numbers independently per sensor stream, so interleaved
+  camera/audio/radio delivery does not create false cross-stream gaps. The
+  allocator persists counters atomically in the local Liminal application
+  support directory, so a capture restart cannot reset a stream and later
+  manufacture a forward sequence gap.
+  SPECTRAL mode turns the
+  latest acoustic, Wi-Fi, and Bluetooth derived feature values into a live
+  bitmap field and reports recent per-stream observation rates from timestamp
+  spans; BELIEF mode applies a transparent first-pass heuristic to
+  camera presence, acoustic activity, and Bluetooth proximity, exposing
+  confidence and cross-modality disagreement rather than presenting a
+  trained-classifier claim; REFERENCE mode renders a real skeleton from the most recent
+  `liminal-capture` pose observation when one exists, and MEMORY mode shows
+  a recent timestamped observation timeline with sensor streams separated and
+  gaps left unfilled; it also exposes a bounded newest-first historical record
+  browser of the newest 32 persisted records with explicit provenance source IDs. The operator can use `j`/`k`
+  or the arrow keys to inspect records without mutating the ledger, and can
+  widen the in-memory window with `]`
+  and narrow it with `[`. It also reports compact populated-day buckets from the
+  full ledger, preserving empty days as gaps rather than interpolating them.
+  FIELD NOTES is a read-only provenance surface: it reports ledger facts,
+  daemon-belief evidence IDs, bounded persisted Tier-0 agent drafts with their
+  stored layer and review status, and system limitations, while marking the Poet's
+  text as IMAGINED and withholding uncalibrated conclusions. When no real data has arrived yet,
+  the image falls back to an explicitly-labeled synthetic demo pattern
+  (§146 Demo Honesty); `liminal-tui --demo` also forces that path so the
+  renderer can be exercised independently of database state. Correction
   to the original ROADMAP.md wording for this item, recorded in
   `crates/liminal-tui/src/ledger_view.rs`'s module doc: it described a "live camera frame"
   reference view, which would require a raw frame in the ledger — §120 and
   the Swift↔Rust contract both forbid that, so a skeleton derived from real
   joint data is shown instead, never camera pixels.
+  CALIBRATION is an offline score view: it accepts an optional JSONL file of
+  human or approved reference labels, matches those labels to persisted fusion
+  beliefs, and reports metrics without changing the live heuristic. Without
+  labels it explicitly reports that calibration is unavailable.
 - **`app/Liminal`** — a Swift package: `LiminalCore` (a testable library —
   the `SensoriumProfile`/`SensorState` Codable types mirroring
   `liminal-schema`'s Rust types field-for-field, plus hashing) and
   `liminal-doctor` (the §21/§117 `liminal doctor` / `liminal doctor --json`
   CLI, a thin wrapper over `LiminalCore`'s hardware probes). It reads real
   camera format/resolution, microphone sample rate, Wi-Fi interface state,
-  and Bluetooth authorization/power state on the machine it runs on — but
-  it never opens an `AVCaptureSession`, taps microphone audio, scans Wi-Fi
-  networks, or starts a BLE scan, so it requests zero permission prompts.
+  and Bluetooth authorization/power state on the machine it runs on. By
+  default it never opens an `AVCaptureSession`, taps microphone audio, scans
+  Wi-Fi networks, or starts a BLE scan, so it requests zero permission
+  prompts. Its explicit `--live --duration=N` mode runs the real coordinators
+  for a bounded window and reports only derived sample counts/statuses; it
+  never writes an acceptance artifact or returns raw media. A live run on
+  this Mac observed camera, microphone, and Wi-Fi samples plus available
+  speaker output; Bluetooth may report a Keychain-backed pseudonym-key
+  failure. The acceptance window separately counts transient CoreBluetooth
+  discovery callbacks, without retaining identifiers, so it can distinguish
+  `no_advertisers_observed` from `advertisers_detected_keychain_unavailable`.
+  It must not be interpreted as proof that no Bluetooth advertisers exist when
+  the scan is not authorized or the radio is unavailable.
   See "TCC and unsigned CLI binaries" below before building anything past
   this probe. The package also has `liminal-capture`, now covering ROADMAP
   items 2 and 5:
@@ -165,22 +224,24 @@ so far:
   (or stdout fallback) via one shared send path, and none persists any raw
   frame, raw continuous audio, SSID/BSSID, or Bluetooth device name to
   disk. The DSP, sanitization, and pseudonymization logic is unit-tested
-  (79 tests across all four organs' pure functions, including a
+  (59 Swift tests across the core and capture support, including a
   privacy-audit-style test that Wi-Fi/Bluetooth JSON literally cannot
-  contain the raw strings that went in); the actual capture paths (camera,
-  microphone, Wi-Fi scan, Bluetooth scan) are EXPERIMENTAL — they build and
-  the logic around them is tested, but a human has not yet run them and
-  confirmed real data comes out the other end, since granting a TCC
-  permission prompt requires a human present at the keyboard. The
-  Keychain-backed pseudonym key storage specifically is not unit-tested at
+  contain the raw strings that went in). The bounded live acceptance path has
+  now observed camera, microphone, and Wi-Fi delivery plus speaker
+  availability on the development Mac; Bluetooth reported three transient
+  advertiser discoveries but remains unable to emit derived features when its
+  Keychain-backed pseudonym key cannot be loaded. The Keychain-backed
+  pseudonym key storage specifically is not unit-tested at
   all (CI can't guarantee an unlocked, writable login keychain); only the
   HMAC function it feeds is.
 
-Everything else in the master plan — Sensorium discovery's live acceptance
-mode, the full permission shell, `liminald` (item 3), passive acoustics,
-Wi-Fi/BLE scanning (items 5-6), calibration, fusion, field-note agents — is
-`PLANNED`. See [`ROADMAP.md`](../ROADMAP.md) for the proposed build order
-and [`AUDIT.md`](../AUDIT.md) for the full feature-by-feature status.
+The remaining master-plan gaps are the signed permission shell, human-labeled
+calibration trials, persisted
+field-note claims, and multi-day trials. The current TUI fusion, memory
+coverage, and read-only field-note surfaces are explicitly experimental or
+provenance-safe as described above. See [`ROADMAP.md`](../ROADMAP.md) for the
+current build order and [`AUDIT.md`](../AUDIT.md) for the feature-by-feature
+status.
 
 ## TCC and unsigned CLI binaries
 
@@ -203,16 +264,19 @@ Building that permission shell as another SPM executable would silently
 attribute every grant to the terminal instead of to Liminal, which is
 exactly the "no hidden sensing" violation §3/§14 exist to prevent.
 
-## Known architectural gap: two disconnected provenance mechanisms
+## Provenance boundary: explicit edges and append-order integrity
 
-`liminal-ledger` currently has two ways to answer "what does this claim
-depend on":
+`liminal-ledger` has distinct mechanisms for derivation and append-order
+integrity:
 
-1. `ProvenanceGraph` — an explicit dependency DAG (`add_node(id,
-   depends_on)`) with cascading erase-invalidation. Built for and only
-   exercised by that crate's own tests; nothing persists a `depends_on`
-   edge into SQLite.
-2. `SqliteLedger`'s `previous_hash` chain — every persisted `Event` already
+1. `SqliteLedger`'s `provenance_edges` table — explicit `derived_id` to
+   `source_id` edges are written atomically with derived events and survive
+   close/reopen. `liminal events provenance <id>` reads these edges.
+2. `ProvenanceGraph` — an explicit in-memory dependency DAG (`add_node(id,
+   depends_on)`) with cascading erase-invalidation. `SqliteLedger::erase_event_ids`
+   applies the same cascade durably for the explicit CLI `privacy erase` range
+   operation and rebuilds the surviving hash chain transactionally.
+3. `SqliteLedger`'s `previous_hash` chain — every persisted `Event` already
    links to its predecessor. `liminal-cli`'s `events history <id>` walks
    this chain, which is real persisted data, but it's the GLOBAL APPEND
    ORDER (an integrity mechanism, §87), not a derivation graph: an
@@ -223,12 +287,23 @@ depend on":
    model, §62, is Observation → Event → Episode → Pattern →
    Interpretation, a many-to-one fan-in `ProvenanceGraph` is built for).
 
-These are not yet reconciled. Building Episodes/Patterns/Interpretations
-(out of scope for every task built so far) will need one coherent,
-persisted provenance mechanism — deciding whether that's a
-`depends_on`-edges table replacing `ProvenanceGraph`, or something else, is
-a design decision for whoever picks up that work, not something to guess at
-here.
+The explicit edge table is now the durable source-link mechanism for derived
+events. `liminal memory replay` materializes deterministic Episode/Pattern
+records on explicit operator request, atomically with their source edges and
+without interpretation claims. The TUI still falls back to a read-only replay
+when those records have not been materialized.
+
+`liminal agents run <role>` is the first Tier-0 agent boundary. It consumes
+only persisted fusion beliefs and structural memory records, writes a local
+  `agent_run` record with explicit input/evidence IDs and provenance edges, and
+stamps the output layer and review status. It refuses to persist without
+structured evidence. Ethnographer and Skeptic outputs remain
+`PENDING_INTERPRETATION` or `INSUFFICIENT_EVIDENCE`; Poet output is always
+`IMAGINED`.
+
+`liminal export` writes an explicit local JSON bundle only after scanning every
+selected payload for forbidden keys. It preserves hash fields and provenance
+sources, supports timestamp ranges, and performs no deletion or network I/O.
 
 ## Why these crates first
 
@@ -245,9 +320,20 @@ inspection.
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 12
+python3 checks/mutation_guard.py --manifest checks/mutations.json --assert-min 43
 python3 checks/coverage_gate.py --manifest checks/mutations.json --report target/lcov.info
 ```
 
 CI (`.github/workflows/ci.yml`) runs all four on every push and pull
 request, plus `checks/docs_gate.py` against this file and the README.
+`liminal export` writes an explicit local JSON bundle only after scanning every
+selected payload for forbidden keys. It preserves hash fields and provenance
+sources, supports timestamp ranges, and performs no deletion or network I/O.
+`liminal retention preview` applies the canonical age policy as a report-only
+operation; structural Episode/Pattern/agent records are explicitly protected
+from age-based candidates. `liminal retention plan` emits the exact eligible
+record IDs, timestamps, and provenance sources as a reviewable JSON plan.
+`liminal retention apply` is the confirmation-gated executor for that plan;
+preview and plan remain read-only. `privacy erase` is the separate, explicit
+`--confirm` operation that may delete a selected range and its dependent
+records. No retention worker may delete from the canonical ledger implicitly.

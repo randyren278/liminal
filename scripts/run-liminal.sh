@@ -31,16 +31,26 @@ mkdir -p "$RUN_DIR"
 cleanup() {
     status=$?
     trap - EXIT INT TERM
-    if [[ -n "$CAPTURE_PID" ]] && kill -0 "$CAPTURE_PID" 2>/dev/null; then
-        kill "$CAPTURE_PID" 2>/dev/null || true
-        wait "$CAPTURE_PID" 2>/dev/null || true
-    fi
-    if [[ -n "$DAEMON_PID" ]] && kill -0 "$DAEMON_PID" 2>/dev/null; then
-        kill "$DAEMON_PID" 2>/dev/null || true
-        wait "$DAEMON_PID" 2>/dev/null || true
-    fi
+    stop_child() {
+        local pid="$1"
+        if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+            return
+        fi
+        kill "$pid" 2>/dev/null || true
+        for _ in $(seq 1 50); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid" 2>/dev/null || true
+                return
+            fi
+            sleep 0.1
+        done
+        kill -KILL "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    }
+    stop_child "$CAPTURE_PID"
+    stop_child "$DAEMON_PID"
     socket_path="/tmp/liminal-$(id -u)/core.sock"
-    if [[ -S "$socket_path" ]]; then
+    if [[ -S "$socket_path" ]] && ! lsof -t "$socket_path" >/dev/null 2>&1; then
         rm -f "$socket_path"
     fi
     rm -rf "$RUN_DIR"
@@ -49,6 +59,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 cd "$ROOT_DIR"
+# The TUI owns a full-screen color surface. It clears NO_COLOR in its own process too, but doing
+# this here keeps the daemon/capture launcher output and the TUI consistent in color-capable shells.
+if [[ "${LIMINAL_COLOR:-}" != "0" && "${LIMINAL_COLOR:-}" != "off" && "${LIMINAL_COLOR:-}" != "false" ]]; then
+    unset NO_COLOR
+fi
 printf 'Liminal runtime\n'
 printf '  logs: %s\n' "$RUN_DIR"
 
@@ -56,7 +71,10 @@ cargo run --quiet -p liminald >"$DAEMON_LOG" 2>&1 &
 DAEMON_PID=$!
 
 socket_path="/tmp/liminal-$(id -u)/core.sock"
-for _ in $(seq 1 100); do
+# Swift/Rust builds can take longer than the old ten-second startup window on a
+# clean checkout. Keep waiting for the daemon while still failing promptly if
+# it exits during startup.
+for _ in $(seq 1 300); do
     if [[ -S "$socket_path" ]]; then break; fi
     if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
         printf 'liminald exited before opening %s:\n' "$socket_path" >&2

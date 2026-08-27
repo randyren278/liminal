@@ -13,13 +13,28 @@ public final class BluetoothScanCoordinator: NSObject, CBCentralManagerDelegate 
     private var manager: CBCentralManager?
     private let onFeatures: FeatureHandler
     private let pseudonymKey: Data
+    private let onDiscovery: (() -> Void)?
     private let queue = DispatchQueue(label: "liminal.bluetooth-scan")
     private var rssiByPseudonym: [String: [Int]] = [:]
     private var windowTimer: DispatchSourceTimer?
 
-    public init(pseudonymKey: Data, onFeatures: @escaping FeatureHandler) {
+    public init(
+        pseudonymKey: Data,
+        onFeatures: @escaping FeatureHandler,
+        onDiscovery: (() -> Void)? = nil,
+    ) {
         self.pseudonymKey = pseudonymKey
         self.onFeatures = onFeatures
+        self.onDiscovery = onDiscovery
+        super.init()
+    }
+
+    /// Starts a privacy-safe radio diagnostic. Peripheral identifiers are only presented to
+    /// CoreBluetooth's callback and are never retained, hashed, or emitted as features.
+    public init(onDiscovery: @escaping () -> Void) {
+        pseudonymKey = Data()
+        self.onDiscovery = onDiscovery
+        onFeatures = { _ in }
         super.init()
     }
 
@@ -61,6 +76,8 @@ public final class BluetoothScanCoordinator: NSObject, CBCentralManagerDelegate 
         _: CBCentralManager, didDiscover peripheral: CBPeripheral,
         advertisementData _: [String: Any], rssi RSSI: NSNumber,
     ) {
+        onDiscovery?()
+        guard !pseudonymKey.isEmpty else { return }
         let pseudonym = pseudonymizeBlePeripheral(key: pseudonymKey, identifier: peripheral.identifier.uuidString)
         rssiByPseudonym[pseudonym, default: []].append(RSSI.intValue)
     }

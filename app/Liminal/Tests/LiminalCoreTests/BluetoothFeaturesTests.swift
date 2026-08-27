@@ -30,4 +30,27 @@ final class BluetoothFeaturesTests: XCTestCase {
         XCTAssertEqual(clusters.first?["pseudonym"] as? String, "ble:abc123")
         XCTAssertEqual(json["cluster_count"] as? Int, 1)
     }
+
+    func testBluetoothAcceptanceDistinguishesNoAdvertisersFromStartupFailure() {
+        XCTAssertEqual(
+            bluetoothAcceptanceStatus(startupStatus: "running", discoveredSampleCount: 0),
+            "no_advertisers_observed",
+        )
+        XCTAssertEqual(
+            bluetoothAcceptanceStatus(startupStatus: "keychain_timeout", discoveredSampleCount: 0),
+            "keychain_timeout",
+        )
+        XCTAssertEqual(
+            bluetoothAcceptanceStatus(startupStatus: "running", discoveredSampleCount: 1),
+            "observed",
+        )
+        XCTAssertEqual(
+            bluetoothAcceptanceStatus(
+                startupStatus: "keychain_timeout",
+                discoveredSampleCount: 0,
+                discoveredPeripheralCount: 1,
+            ),
+            "advertisers_detected_keychain_unavailable",
+        )
+    }
 }

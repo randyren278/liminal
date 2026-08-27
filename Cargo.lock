@@ -941,10 +941,13 @@ dependencies = [
 name = "liminal-cli"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "clap",
  "liminal-ledger",
+ "liminal-memory",
  "liminal-policy",
  "rusqlite",
+ "serde",
  "serde_json",
 ]
 
@@ -1003,6 +1006,7 @@ dependencies = [
  "crossterm",
  "image",
  "liminal-ledger",
+ "liminal-memory",
  "ratatui",
  "ratatui-image",
  "serde_json",

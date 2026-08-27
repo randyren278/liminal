@@ -2,6 +2,33 @@ import Darwin
 @testable import LiminalCore
 import XCTest
 
+final class StreamSequenceAllocatorTests: XCTestCase {
+    func testSequencesAdvanceIndependentlyForInterleavedStreams() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("liminal-sequences-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let allocator = try StreamSequenceAllocator(storageURL: url)
+
+        XCTAssertEqual(try allocator.next(for: "camera"), 1)
+        XCTAssertEqual(try allocator.next(for: "microphone"), 1)
+        XCTAssertEqual(try allocator.next(for: "camera"), 2)
+        XCTAssertEqual(try allocator.next(for: "microphone"), 2)
+    }
+
+    func testSequencesResumeFromDurableStateAfterRestart() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("liminal-sequences-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let first = try StreamSequenceAllocator(storageURL: url)
+        XCTAssertEqual(try first.next(for: "camera"), 1)
+        XCTAssertEqual(try first.next(for: "camera"), 2)
+
+        let restarted = try StreamSequenceAllocator(storageURL: url)
+        XCTAssertEqual(try restarted.next(for: "camera"), 3)
+    }
+}
+
 /// Exercises `UnixSocketClient` against a REAL Unix domain socket listener (raw POSIX
 /// bind/listen/accept in-process) -- this is genuinely testable in CI without any hardware or
 /// permission, unlike the camera/audio/radio probes.

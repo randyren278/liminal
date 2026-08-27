@@ -24,6 +24,19 @@ public final class UnixSocketClient {
         }
         fd = created
 
+        var noSigPipe: Int32 = 1
+        guard setsockopt(
+            created,
+            SOL_SOCKET,
+            SO_NOSIGPIPE,
+            &noSigPipe,
+            socklen_t(MemoryLayout<Int32>.size),
+        ) == 0 else {
+            let savedErrno = errno
+            close(created)
+            throw UnixSocketError.socketCreationFailed(errno: savedErrno)
+        }
+
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathBytes = Array(path.utf8)
@@ -59,6 +72,9 @@ public final class UnixSocketClient {
                 let n = Darwin.write(fd, rawPtr.baseAddress!.advanced(by: offset), rawPtr.count - offset)
                 if n < 0 {
                     throw UnixSocketError.writeFailed(errno: errno)
+                }
+                guard n > 0 else {
+                    throw UnixSocketError.writeFailed(errno: 0)
                 }
                 offset += n
             }

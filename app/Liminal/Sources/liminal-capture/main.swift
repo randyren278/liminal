@@ -30,8 +30,13 @@ do {
     socketClient = nil
 }
 
-var sequence: UInt64 = 0
-let sequenceLock = NSLock()
+let sequenceAllocator: StreamSequenceAllocator
+do {
+    sequenceAllocator = try StreamSequenceAllocator()
+} catch {
+    fputs("liminal-capture: cannot load durable stream sequence state: \(error)\n", stderr)
+    exit(EXIT_FAILURE)
+}
 
 // Keep every live organ strongly referenced for the lifetime of the daemon. The capture and
 // audio coordinators own the delegate/tap callbacks, while the Bluetooth coordinator owns the
@@ -44,10 +49,13 @@ var bluetoothCoordinator: BluetoothScanCoordinator?
 /// Shared by both organs: builds and sends one envelope, falling back to stdout on any send
 /// failure (including "never connected in the first place").
 func sendFeatures(streamId: String, payload: Data) {
-    sequenceLock.lock()
-    sequence += 1
-    let currentSequence = sequence
-    sequenceLock.unlock()
+    let currentSequence: UInt64
+    do {
+        currentSequence = try sequenceAllocator.next(for: streamId)
+    } catch {
+        print("liminal-capture: cannot persist \(streamId) sequence; dropping observation: \(error)")
+        return
+    }
 
     let nowUtcUs = Int64(Date().timeIntervalSince1970 * 1_000_000)
     let nowMonoUs = Int64(DispatchTime.now().uptimeNanoseconds / 1000)
@@ -77,12 +85,26 @@ func requestAuthorization(for mediaType: AVMediaType, explanation: String) -> Bo
     print("liminal-capture: requesting \(mediaType.rawValue) authorization...")
     print(explanation)
     let semaphore = DispatchSemaphore(value: 0)
+    let resultLock = NSLock()
     var granted = false
+    var completed = false
     AVCaptureDevice.requestAccess(for: mediaType) { result in
+        resultLock.lock()
         granted = result
+        completed = true
+        resultLock.unlock()
         semaphore.signal()
     }
-    semaphore.wait()
+    let deadline = Date().addingTimeInterval(30.0)
+    while semaphore.wait(timeout: .now()) == .timedOut, Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+    }
+    resultLock.lock()
+    defer { resultLock.unlock() }
+    guard completed else {
+        print("liminal-capture: (mediaType.rawValue) authorization timed out after 30s.")
+        return false
+    }
     return granted
 }
 
@@ -167,8 +189,20 @@ default:
 }
 
 func startBluetoothOrgan() {
-    guard let pseudonymKey = try? loadOrCreatePseudonymKey() else {
-        print("liminal-capture: failed to load/create the Bluetooth pseudonym key from Keychain -- Bluetooth organ will not run.")
+    let pseudonymKey: Data
+    do {
+        pseudonymKey = try loadOrCreatePseudonymKey()
+    } catch let error as PseudonymKeyStoreError {
+        print(
+            "liminal-capture: Bluetooth pseudonym key unavailable (\(error)); "
+                + "Bluetooth organ will not run.",
+        )
+        return
+    } catch {
+        print(
+            "liminal-capture: Bluetooth pseudonym key unavailable (unknown_error); "
+                + "Bluetooth organ will not run.",
+        )
         return
     }
     let coordinator = BluetoothScanCoordinator(pseudonymKey: pseudonymKey) { window in

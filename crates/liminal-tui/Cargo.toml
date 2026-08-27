@@ -9,4 +9,5 @@ crossterm = "0.28"
 ratatui-image = "4"
 image = "0.25"
 liminal-ledger = { path = "../liminal-ledger" }
+liminal-memory = { path = "../liminal-memory" }
 serde_json.workspace = true

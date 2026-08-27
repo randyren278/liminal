@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Master plan §18: `pseudonym_hmac_key` is a Keychain entry, not a config value or a per-process
@@ -7,9 +8,18 @@ import Security
 /// A per-process key would also defeat itself in the opposite direction: without persistence,
 /// "recurring" would silently and incorrectly reset every time the app restarts, and nothing in
 /// the UI would reveal that the history had been invisibly discarded.
-public enum PseudonymKeyStoreError: Error {
+public enum PseudonymKeyStoreError: Error, CustomStringConvertible {
     case unexpectedStatus(OSStatus)
     case unreadableStoredKey
+    case interactionRequired
+
+    public var description: String {
+        switch self {
+        case let .unexpectedStatus(status): "security_status_\(status)"
+        case .unreadableStoredKey: "unreadable_stored_key"
+        case .interactionRequired: "interaction_required"
+        }
+    }
 }
 
 private let keychainService = "com.liminal.pseudonym"
@@ -20,8 +30,8 @@ private let keyLengthBytes = 32
 /// none exists yet. Not unit-tested against the real Keychain (CI environments can't reliably
 /// guarantee an unlocked, writable login keychain) -- `hmacSha256Hex` itself, which this key
 /// feeds into, is fully tested; only the "where does the key come from" storage step is not.
-public func loadOrCreatePseudonymKey() throws -> Data {
-    if let existing = try readKey() {
+public func loadOrCreatePseudonymKey(allowInteraction: Bool = false) throws -> Data {
+    if let existing = try readKey(allowInteraction: allowInteraction) {
         return existing
     }
     var newKey = Data(count: keyLengthBytes)
@@ -33,13 +43,24 @@ public func loadOrCreatePseudonymKey() throws -> Data {
     return newKey
 }
 
-private func readKey() throws -> Data? {
-    let query: [String: Any] = [
+private func readKey(allowInteraction: Bool) throws -> Data? {
+    var query: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: keychainService,
         kSecAttrAccount as String: keychainAccount,
         kSecReturnData as String: true,
     ]
+    // Headless capture must fail rather than block on a Keychain prompt. The visible acceptance
+    // probe can opt into the normal macOS authorization path, but its caller still applies a
+    // bounded timeout.
+    if allowInteraction {
+        // Let Security use the process's normal interactive context. Binding an LAContext from a
+        // background queue can wait indefinitely even for an ordinary login-keychain item.
+    } else {
+        let authenticationContext = LAContext()
+        authenticationContext.interactionNotAllowed = true
+        query[kSecUseAuthenticationContext as String] = authenticationContext
+    }
     var item: CFTypeRef?
     let status = SecItemCopyMatching(query as CFDictionary, &item)
     switch status {
@@ -48,6 +69,8 @@ private func readKey() throws -> Data? {
         return data
     case errSecItemNotFound:
         return nil
+    case errSecInteractionNotAllowed:
+        throw PseudonymKeyStoreError.interactionRequired
     default:
         throw PseudonymKeyStoreError.unexpectedStatus(status)
     }
@@ -58,6 +81,10 @@ private func storeKey(_ key: Data) throws {
         kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: keychainService,
         kSecAttrAccount as String: keychainAccount,
+        // The pseudonym must persist across daemon restarts, but it must not acquire a
+        // user-presence ACL that makes a headless capture process hang. After-first-unlock is
+        // the intended boundary for this local, non-exported key.
+        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         kSecValueData as String: key,
     ]
     let status = SecItemAdd(query as CFDictionary, nil)

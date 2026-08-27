@@ -11,15 +11,17 @@ pub enum Mode {
     Memory,
     FieldNotes,
     Reference,
+    Calibration,
 }
 
 impl Mode {
-    pub const ALL: [Mode; 5] = [
+    pub const ALL: [Mode; 6] = [
         Mode::Spectral,
         Mode::Belief,
         Mode::Memory,
         Mode::FieldNotes,
         Mode::Reference,
+        Mode::Calibration,
     ];
 
     pub fn title(&self) -> &'static str {
@@ -29,6 +31,7 @@ impl Mode {
             Mode::Memory => "MEMORY",
             Mode::FieldNotes => "FIELD NOTES",
             Mode::Reference => "REFERENCE",
+            Mode::Calibration => "CALIBRATION",
         }
     }
 
@@ -55,12 +58,12 @@ mod tests {
 
     #[test]
     fn next_wraps_around_from_the_last_mode_to_the_first() {
-        assert_eq!(Mode::Reference.next(), Mode::Spectral);
+        assert_eq!(Mode::Calibration.next(), Mode::Spectral);
     }
 
     #[test]
     fn previous_wraps_around_from_the_first_mode_to_the_last() {
-        assert_eq!(Mode::Spectral.previous(), Mode::Reference);
+        assert_eq!(Mode::Spectral.previous(), Mode::Calibration);
     }
 
     #[test]

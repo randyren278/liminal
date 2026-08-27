@@ -12,10 +12,10 @@ read that section before approving, since it's the part that determines what
 
 ## 1. Memory-hierarchy schema + event segmentation
 
-**Rationale:** the ledger currently stores raw `Event`s with no concept of
-Belief → Event → Episode → Pattern (§56–§61 of the master plan). Nothing
-above the ledger exists yet, so fusion and memory work has no data model to
-target.
+**Rationale:** the master plan calls for a deterministic memory hierarchy
+above individual beliefs: Belief → Event → Episode → Pattern (§56–§61).
+The first implementation must remain structural and read-only until
+human-labeled history supports calibrated recurrence interpretation.
 
 **Done-state:** a new `liminal-memory` crate implements the segmentation
 hysteresis from §58 (enter: occupied P≥0.70 for 3 consecutive seconds; exit:
@@ -42,9 +42,10 @@ schema mismatch" requirement.
 
 ## 3. SQLite-backed ledger persistence
 
-**Rationale:** the ledger and provenance graph are in-memory only today.
-Privacy erase, retention, and CLI browsing (§82) all require real storage —
-this is the first item that unblocks several later ones at once.
+**Rationale:** the ledger and its first provenance representation must survive
+restart. Privacy erase, retention, CLI browsing (§82), and later history views
+all require real storage — this is the first item that unblocks several later
+ones at once.
 
 **Done-state:** events survive a close/reopen cycle with `verify_chain()`
 still passing; a corrupted tail row is rejected rather than silently
@@ -57,14 +58,16 @@ anything else depends on it. Worth getting review on before merging.
 ## 4. `liminal-cli` — the data-layer-only subset
 
 **Rationale:** of the full CLI contract (§82), `privacy audit`, `events
-list`/`show`, and `explain <claim-id>` need nothing but the SQLite store
+list`/`show`, and explicit provenance lookup need nothing but the SQLite store
 from item 3 — no camera, no daemon socket, no TCC permission. It's the one
 slice of the user-facing product that's honestly buildable right now.
 
 **Done-state:** `liminal privacy audit` against a fixture DB seeded with a
 deliberately leaked forbidden key exits non-zero and names the offending
 record; against a clean DB it exits 0. `liminal explain <id>` walks the
-provenance graph from item 3's storage back to source Observations.
+provenance graph from item 3's storage back to source Observations. `events
+history` is append-order inspection; `events provenance` is the explicit
+derivation view.
 
 **Risk:** low.
 
@@ -138,9 +141,11 @@ the user rather than unilaterally:
    envelopes over a Unix domain socket (§15/§119, socket path per §15). Zero
    raw frames persisted (§120 exit criterion). This is the first command that
    requests a real TCC prompt — the user grants it interactively.
-3. **`liminald` skeleton** — a Rust daemon accepting the Unix socket
-   connection from item 2, decoding envelopes, and appending them to
-   `SqliteLedger` (already built). No fusion yet — just ingest and persist.
+3. **DONE, extended beyond the original skeleton.** `liminald` accepts the
+   Unix socket connection from item 2, validates and persists feature-bearing
+   observations, then appends a transparent `fusion` belief record whenever
+   the participating streams have no unacknowledged sensor gap. No raw media
+   enters this path.
 4. **DONE, with a correction from how it was originally scoped here.**
    Wire `liminal-tui` to `liminald`'s SQLite store — this item's original
    wording called for "the live camera frame reference view... and pose
@@ -172,13 +177,86 @@ the user rather than unilaterally:
    means something across restarts. EXPERIMENTAL until a human runs it
    live — same reasoning as items 2 and 5.
 
-**All six items on this roadmap slice are now built.** Fusion (§52,
-combining these into one belief), calibration (§44), and the 7-/30-day
-field trials remain explicitly **not** started — per §47, building a
+**All six items on this roadmap slice are now built.** A first transparent
+fusion heuristic (§52) is now present in the TUI's BELIEF mode, combining
+camera presence, acoustic activity, and Bluetooth proximity while exposing
+confidence and disagreement. It is explicitly experimental and is not a
+calibrated classifier. MEMORY mode now also renders the latest timestamped
+ledger observations without interpolating sensor gaps, with selectable local
+history windows and a read-only occupancy Event projection from daemon fusion
+beliefs. Calibration (§44),
+long-range historical memory, and the 7-/30-day field trials remain explicitly
+**not** started — per §47, building a
 classifier before real calibration data exists from items 2–6 is the
 premature complexity the master plan itself warns against. That stays
 future work until there's real data to justify it, and until a human has
 run every organ above at least once to confirm they work as built.
+
+The first calibration boundary is now in place: `liminal-memory` exposes an
+offline evaluator for explicitly labeled probability samples, reporting
+accuracy, Brier score, precision, and recall. It does not generate labels,
+retune the live heuristic, or imply that the current ledger is calibrated.
+Collecting approved human/reference labels and using this evaluator on a
+real trial remains future work.
+
+The §143 live acceptance command is now present as `liminal-doctor --live
+--duration=N --json`. On the current Mac it observed camera, microphone, and
+Wi-Fi delivery and confirmed speaker availability. The Bluetooth radio also
+reported three transient advertiser discoveries; its derived feature stream
+remains unavailable because the Keychain-backed pseudonym key cannot be
+loaded. The acceptance report now distinguishes those two facts.
+
+MEMORY also now computes a bounded 30-day view of populated observation-day
+buckets from the full ledger. It reports coverage, not continuity: empty days
+remain empty and no belief or interpretation is synthesized from the counts.
+
+The memory crate now also replays confirmed occupancy Events into deterministic
+Episodes and coarse duration-based Pattern buckets. MEMORY and FIELD NOTES
+show those structural counts, while explicitly withholding continuity,
+behavioral, or calibrated recurrence claims.
+
+SQLite now persists explicit derivation edges alongside the hash chain, and
+`liminal events provenance <id>` reads those edges without confusing global
+append order for evidence. This is the storage boundary needed before
+historical pattern navigation or agent claims can be made trustworthy.
+
+The next structural boundary is now executable too: `liminal memory replay`
+materializes deterministic Episode and Pattern records with explicit source
+edges, is idempotent for the same replay, and remains deliberately free of
+behavioral or calibrated interpretation.
+
+Tier-0 field-note execution now has the same boundary: `liminal agents run
+<role>` persists only local deterministic drafts over structured fusion or
+memory evidence, records input/evidence IDs and provenance, and refuses empty
+evidence. Interpretation remains review-gated and Poet output remains
+explicitly IMAGINED.
+
+The operator inspection boundary now includes `events provenance-tree`, which
+walks the durable source graph without confusing it with append order, and a
+privacy-audited local `export` command with optional timestamp bounds. Export
+is additive and non-destructive; retention remains a policy decision rather
+than an implicit delete.
+
+The CUI now includes an explicit CALIBRATION mode. With `--labels PATH`, it
+matches a human/reference JSONL label file against persisted daemon fusion
+beliefs and displays offline accuracy, Brier score, precision, and recall;
+without labels it says calibration is unavailable. This view never retunes the
+live heuristic and does not treat sensor output as its own ground truth.
+
+The CUI operator contract is also now represented in the live console: `p`
+pauses/resumes polling, `v` toggles the vision-derived reference off for a
+nonvisual telemetry view, the status panel exposes sensor-gap and belief
+counts, and all six modes remain navigable without mutating canonical state.
+
+Fusion now carries freshness-weighted sensor health and an explicit
+`stable`/`contested` state. Contradictory modalities are surfaced as contested,
+and input older than the bounded health horizon no longer remains authoritative.
+This is still a transparent heuristic, not a calibrated classifier.
+
+The daemon transport path now also deduplicates replayed message IDs, records
+forward monotonic-sequence gaps as explicit `sensor_gap` events, and rejects
+frames above a 1 MiB allocation bound. A 16-slot synchronous connection queue
+applies backpressure before worker creation can become unbounded.
 
 ---
 
