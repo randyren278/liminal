@@ -18,3 +18,5 @@ liminal-memory = { path = "../liminal-memory" }
 [dev-dependencies]
 blake3.workspace = true
 rusqlite.workspace = true
+liminald = { path = "../liminald" }
+liminal-ipc = { path = "../liminal-ipc" }
