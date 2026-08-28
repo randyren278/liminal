@@ -61,8 +61,8 @@
       "id": "belief-bridges-sensor-gap",
       "file": "crates/liminal-ledger/src/lib.rs",
       "invariant": "Belief can never be recorded for a stream across an unacknowledged sensor outage.",
-      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
-      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap \u2014 belief must never silently bridge an outage (\u00a789, \u00a7142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
+      "find": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if *self.stream_gap_pending.get(stream_id).unwrap_or(&false) {",
+      "replace": "    /// Record a belief derived from a stream. Fails if the stream has an unacknowledged sensor\n    /// gap — belief must never silently bridge an outage (§89, §142.9).\n    pub fn append_belief(\n        &mut self,\n        id: impl Into<String>,\n        stream_id: &str,\n        ts_us: i64,\n    ) -> Result<(), LedgerError> {\n        if false {"
     },
     {
       "id": "sqlite-ledger-accepts-corrupted-chain-on-reopen",
@@ -74,7 +74,7 @@
     {
       "id": "retention-past-tier-never-deleted",
       "file": "crates/liminal-policy/src/retention.rs",
-      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the \u00a785 tier.",
+      "invariant": "A record past its retention tier's cutoff is always eligible for deletion -- retention never silently extends past the §85 tier.",
       "find": "    now_us - recorded_at_us >= cutoff_us",
       "replace": "    false"
     },
@@ -124,8 +124,8 @@
       "id": "daemon-replayed-message-is-idempotent",
       "file": "crates/liminald/src/lib.rs",
       "invariant": "A replayed envelope with an already persisted message ID must not create a duplicate observation or fusion belief.",
-      "find": "        .any(|event| event.id == envelope.message_id)",
-      "replace": "        .any(|event| false)"
+      "find": "    if ledger.contains_event_id(&envelope.message_id)? {",
+      "replace": "    if false {"
     },
     {
       "id": "daemon-rejects-oversized-frames-before-allocation",
@@ -146,7 +146,7 @@
       "file": "crates/liminald/src/main.rs",
       "invariant": "The daemon connection queue must reject work beyond its fixed pending limit instead of allowing unbounded queued connections.",
       "find": "    let (sender, receiver) = sync_channel(MAX_PENDING_CONNECTIONS);",
-      "replace": "    let (sender, receiver) = sync_channel(0);"
+      "replace": "    let (sender, receiver) = sync_channel(MAX_PENDING_CONNECTIONS * 1024);"
     },
     {
       "id": "calibration-label-matching-honors-window-boundary",
@@ -173,8 +173,8 @@
       "id": "fusion-contradiction-is-contested",
       "file": "crates/liminald/src/lib.rs",
       "invariant": "Strongly contradictory live modalities must be labeled contested rather than reported as stable.",
-      "find": "    let state = if disagreement > 0.45 || average_health < 0.25 {",
-      "replace": "    let state = if false {"
+      "find": "    let disagreement = max - min;\n    let state = if disagreement > 0.45 || average_health < 0.25 {\n        \"contested\"\n    } else {\n        \"stable\"\n    };\n    let evidence_ids = observations",
+      "replace": "    let disagreement = max - min;\n    let state = if false {\n        \"contested\"\n    } else {\n        \"stable\"\n    };\n    let evidence_ids = observations"
     },
     {
       "id": "sqlite-provenance-returns-explicit-sources",
@@ -229,8 +229,8 @@
       "id": "tui-demo-mode-is-ledger-independent",
       "file": "crates/liminal-tui/src/main.rs",
       "invariant": "Explicit TUI demo mode must remain synthetic and never read or display live ledger data.",
-      "find": "        if self.demo_only {",
-      "replace": "        self.snapshot = if false {"
+      "find": "            _ if self.demo_only => (",
+      "replace": "            _ if false => ("
     },
     {
       "id": "tui-ledger-errors-are-not-demo-data",
