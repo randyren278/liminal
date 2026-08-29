@@ -88,9 +88,8 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
             let fill = 1.0 / (1.0 + (-signed_distance * 3.4).exp());
             let core = (-(radius / (base_radius * 0.52).max(0.015)).powi(2)).exp() * fill;
             let shell = (-(radius - lobed_radius).abs() / (edge_width * 0.72).max(0.007)).exp();
-            let iso = (0.5
-                + 0.5 * ((radius / lobed_radius.max(0.02)) * 20.0 - phase * 0.18).cos())
-            .powf(18.0)
+            let iso = (0.5 + 0.5 * ((radius / lobed_radius.max(0.02)) * 20.0 - phase * 0.18).cos())
+                .powf(18.0)
                 * fill;
 
             if contested {
