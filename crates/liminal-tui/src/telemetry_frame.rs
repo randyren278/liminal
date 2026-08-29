@@ -46,12 +46,12 @@ fn oklch_to_linear_srgb(lightness: f64, chroma: f64, hue_degrees: f64) -> [f64; 
     let b = hue.sin();
 
     let convert = |candidate_chroma: f64| {
-        let l = lightness + 0.3963377774 * candidate_chroma * a
-            + 0.2158037573 * candidate_chroma * b;
-        let m = lightness - 0.1055613458 * candidate_chroma * a
-            - 0.0638541728 * candidate_chroma * b;
-        let s = lightness - 0.0894841775 * candidate_chroma * a
-            - 1.2914855480 * candidate_chroma * b;
+        let l =
+            lightness + 0.3963377774 * candidate_chroma * a + 0.2158037573 * candidate_chroma * b;
+        let m =
+            lightness - 0.1055613458 * candidate_chroma * a - 0.0638541728 * candidate_chroma * b;
+        let s =
+            lightness - 0.0894841775 * candidate_chroma * a - 1.2914855480 * candidate_chroma * b;
         let l3 = l * l * l;
         let m3 = m * m * m;
         let s3 = s * s * s;
@@ -138,8 +138,8 @@ pub fn spectral_frame(
     let wifi_present = telemetry.wifi_rssi_mean.is_some()
         || telemetry.wifi_noise_mean.is_some()
         || telemetry.wifi_network_count.is_some();
-    let ble_present = telemetry.bluetooth_cluster_count.is_some()
-        || telemetry.bluetooth_mean_rssi.is_some();
+    let ble_present =
+        telemetry.bluetooth_cluster_count.is_some() || telemetry.bluetooth_mean_rssi.is_some();
 
     let audio_strength = if audio_present {
         visual_strength(audio.max(if telemetry.audio_centroid_hz.is_some() {
@@ -198,13 +198,9 @@ pub fn spectral_frame(
             let radius = (wx * wx + wy * wy).sqrt();
             let angle = wy.atan2(wx);
 
-            let flow = 0.5
-                + 0.5
-                    * (wx * 4.1 + 1.4 * (wy * 5.3 - phase * 0.11).cos() + phase * 0.08)
-                        .sin();
-            let grain = 0.5
-                + 0.5
-                    * (fx * 117.1 + fy * 83.7 + ((fx + fy) * 31.0).sin()).sin();
+            let flow =
+                0.5 + 0.5 * (wx * 4.1 + 1.4 * (wy * 5.3 - phase * 0.11).cos() + phase * 0.08).sin();
+            let grain = 0.5 + 0.5 * (fx * 117.1 + fy * 83.7 + ((fx + fy) * 31.0).sin()).sin();
             let mut linear = [
                 0.0015 + flow * 0.0017 + grain * 0.0012,
                 0.0035 + flow * 0.0027 + grain * 0.0012,
@@ -213,13 +209,11 @@ pub fn spectral_frame(
 
             // Always-on atmospheric wisps are intentionally low-energy. They provide a visual
             // substrate without pretending missing telemetry exists.
-            let wisp_a = (-(wy - 0.20 * (wx * 2.8 + phase * 0.08).sin()).powi(2)
-                / 0.16f64.powi(2))
-            .exp()
+            let wisp_a = (-(wy - 0.20 * (wx * 2.8 + phase * 0.08).sin()).powi(2) / 0.16f64.powi(2))
+                .exp()
                 * (0.5 + 0.5 * (wx * 8.5 - phase * 0.12).sin()).powf(8.0);
-            let wisp_b = (-(wx + 0.18 * (wy * 3.1 - phase * 0.06).sin()).powi(2)
-                / 0.19f64.powi(2))
-            .exp()
+            let wisp_b = (-(wx + 0.18 * (wy * 3.1 - phase * 0.06).sin()).powi(2) / 0.19f64.powi(2))
+                .exp()
                 * (0.5 + 0.5 * (wy * 9.2 + phase * 0.10).cos()).powf(10.0);
             add_light(&mut linear, violet, wisp_a * 0.020);
             add_light(&mut linear, teal, wisp_b * 0.012);
@@ -227,10 +221,8 @@ pub fn spectral_frame(
             // Wi-Fi: slow contour field + displaced RF-change ripple source.
             if wifi_strength > 0.0 {
                 let field = (wx * 11.5 + wy * 3.2 + phase * 0.13 + noise * 2.3).sin()
-                    + 0.8
-                        * (wy * 10.2 - wx * 2.4 - phase * 0.09 + wifi_density * 1.1).cos();
-                let contour = (0.5 + 0.5 * (field * std::f64::consts::PI * 1.45).cos())
-                    .powf(18.0);
+                    + 0.8 * (wy * 10.2 - wx * 2.4 - phase * 0.09 + wifi_density * 1.1).cos();
+                let contour = (0.5 + 0.5 * (field * std::f64::consts::PI * 1.45).cos()).powf(18.0);
                 let elliptical_radius = ((wx * 0.88).powi(2) + (wy * 1.05).powi(2)).sqrt();
                 let envelope = (-(elliptical_radius / 0.78).powf(4.0)).exp();
                 add_light(
@@ -264,13 +256,10 @@ pub fn spectral_frame(
                 let d3 = ((wx - 0.38).powi(2) + (wy - 0.25).powi(2)).sqrt();
                 let frequency = 23.0 + 21.0 * centroid;
                 let interference = (0.5
-                    + 0.5
-                        * ((d1 - d2) * frequency + phase * (1.05 + 0.65 * audio)).sin())
+                    + 0.5 * ((d1 - d2) * frequency + phase * (1.05 + 0.65 * audio)).sin())
                 .powf(6.0);
                 let interference_b = (0.5
-                    + 0.5
-                        * ((d2 - d3) * frequency * 0.72 - phase * (0.63 + 0.40 * audio))
-                            .cos())
+                    + 0.5 * ((d2 - d3) * frequency * 0.72 - phase * (0.63 + 0.40 * audio)).cos())
                 .powf(8.0);
                 let cloud = (-(wy + 0.04 + 0.06 * (wx * 5.0 + phase * 0.17).sin()).powi(2)
                     / 0.31f64.powi(2))
@@ -290,11 +279,7 @@ pub fn spectral_frame(
                 let ridge = wy + 0.21 * wx + 0.23 * (wx * 2.4 + phase * 0.16).sin();
                 let tail = (-ridge.abs() / (0.04 + 0.04 * (1.0 - audio))).exp()
                     * (0.5 + 0.5 * (wx * 10.0 - phase * 0.16).sin()).powf(4.0);
-                add_light(
-                    &mut linear,
-                    teal,
-                    tail * (0.008 + 0.055 * audio_strength),
-                );
+                add_light(&mut linear, teal, tail * (0.008 + 0.055 * audio_strength));
             }
 
             // Vision-derived presence is a refractive void: recognizable as a disturbance, but it
@@ -312,14 +297,10 @@ pub fn spectral_frame(
                 for channel in &mut linear {
                     *channel *= 1.0 - presence * (0.11 + 0.16 * camera);
                 }
-                let shape = (px / (0.17 + 0.04 * camera)).powi(2)
-                    + (py / (0.36 + 0.04 * camera)).powi(2);
+                let shape =
+                    (px / (0.17 + 0.04 * camera)).powi(2) + (py / (0.36 + 0.04 * camera)).powi(2);
                 let rim = (-(shape - 1.0).abs() / 0.085).exp();
-                add_light(
-                    &mut linear,
-                    rose,
-                    rim * (0.010 + 0.065 * camera_strength),
-                );
+                add_light(&mut linear, rose, rim * (0.010 + 0.065 * camera_strength));
             }
 
             // VAD is explicitly heuristic, so it appears only as a transient pulse rather than a
@@ -331,15 +312,9 @@ pub fn spectral_frame(
                 let pulse = (-(voice_radius / 0.23).powi(2)).exp()
                     * (0.25
                         + 0.75
-                            * (0.5
-                                + 0.5
-                                    * (phase * 3.0 - voice_radius * 28.0 + vx * 7.0).sin())
-                            .powf(8.0));
-                add_light(
-                    &mut linear,
-                    rose,
-                    pulse * (0.015 + 0.11 * vad_strength),
-                );
+                            * (0.5 + 0.5 * (phase * 3.0 - voice_radius * 28.0 + vx * 7.0).sin())
+                                .powf(8.0));
+                add_light(&mut linear, rose, pulse * (0.015 + 0.11 * vad_strength));
             }
 
             // Bluetooth: discrete pseudonymous cluster count becomes orbiting points. Aggregate
@@ -361,27 +336,24 @@ pub fn spectral_frame(
                 add_light(
                     &mut linear,
                     amber,
-                    glow * (0.025 + 0.090 * ble_strength)
-                        + core * (0.10 + 0.26 * ble_strength),
+                    glow * (0.025 + 0.090 * ble_strength) + core * (0.10 + 0.26 * ble_strength),
                 );
 
-                let angular_distance = (angle - orbit_angle).sin().atan2((angle - orbit_angle).cos()).abs();
+                let angular_distance = (angle - orbit_angle)
+                    .sin()
+                    .atan2((angle - orbit_angle).cos())
+                    .abs();
                 let trail = (-((radius - orbit_radius) / 0.017).powi(2)).exp()
                     * (-angular_distance / 0.48).exp();
-                add_light(
-                    &mut linear,
-                    amber,
-                    trail * (0.006 + 0.028 * ble_strength),
-                );
+                add_light(&mut linear, amber, trail * (0.006 + 0.028 * ble_strength));
             }
 
             // A small off-center aperture remains the recognisable Liminal threshold. It is kept
             // subordinate to sensor-driven layers so the composition does not collapse into a logo.
             let aperture_x = wx + 0.03;
             let aperture_y = wy - 0.02;
-            let aperture_radius = ((aperture_x * 1.08).powi(2)
-                + (aperture_y * 0.94).powi(2))
-            .sqrt();
+            let aperture_radius =
+                ((aperture_x * 1.08).powi(2) + (aperture_y * 0.94).powi(2)).sqrt();
             let aperture = (-(aperture_radius / 0.085).powf(4.0)).exp();
             for channel in &mut linear {
                 *channel *= 1.0 - aperture * 0.26;
@@ -433,8 +405,14 @@ mod tests {
             .map(|pixel| u64::from(pixel[0]) + u64::from(pixel[1]) + u64::from(pixel[2]))
             .sum::<u64>()
             / (frame.width() as u64 * frame.height() as u64 * 3);
-        assert!(brightest > 30, "idle field should still feel intentionally alive");
-        assert!(average < 55, "idle substrate must not masquerade as live evidence");
+        assert!(
+            brightest > 30,
+            "idle field should still feel intentionally alive"
+        );
+        assert!(
+            average < 55,
+            "idle substrate must not masquerade as live evidence"
+        );
     }
 
     #[test]
@@ -485,13 +463,20 @@ mod tests {
         let frame = spectral_frame(96, 64, 11, &demo_telemetry());
         let cyan_like = frame
             .pixels()
-            .filter(|pixel| pixel[1] > 70 && pixel[2] > pixel[0] + 15)
+            .filter(|pixel| {
+                u16::from(pixel[1]) > 70 && u16::from(pixel[2]) > u16::from(pixel[0]) + 15
+            })
             .count();
         let warm_like = frame
             .pixels()
-            .filter(|pixel| pixel[0] > 90 && pixel[0] > pixel[2] + 10)
+            .filter(|pixel| {
+                u16::from(pixel[0]) > 90 && u16::from(pixel[0]) > u16::from(pixel[2]) + 10
+            })
             .count();
         assert!(cyan_like > 30, "live field lost its cool contour language");
-        assert!(warm_like > 2, "Bluetooth/presence accents became visually invisible");
+        assert!(
+            warm_like > 2,
+            "Bluetooth/presence accents became visually invisible"
+        );
     }
 }
