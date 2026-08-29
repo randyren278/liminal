@@ -64,9 +64,7 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
             let dy = fy - 0.5 - center_y;
             let radius = (dx * dx + dy * dy).sqrt();
             let angle = dy.atan2(dx);
-            let grain = 0.5
-                + 0.5
-                    * (fx * 91.3 + fy * 73.1 + ((fx - fy) * 27.0).sin()).sin();
+            let grain = 0.5 + 0.5 * (fx * 91.3 + fy * 73.1 + ((fx - fy) * 27.0).sin()).sin();
             let mut linear = [
                 0.0016 + grain * 0.0012,
                 0.0035 + grain * 0.0012,
@@ -91,25 +89,28 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
             let core = (-(radius / (base_radius * 0.52).max(0.015)).powi(2)).exp() * fill;
             let shell = (-(radius - lobed_radius).abs() / (edge_width * 0.72).max(0.007)).exp();
             let iso = (0.5
-                + 0.5
-                    * ((radius / lobed_radius.max(0.02)) * 20.0 - phase * 0.18).cos())
+                + 0.5 * ((radius / lobed_radius.max(0.02)) * 20.0 - phase * 0.18).cos())
             .powf(18.0)
                 * fill;
 
             if contested {
-                let left_distance = ((dx + 0.07 * disagreement).powi(2) + (dy - 0.02).powi(2)).sqrt();
-                let right_distance = ((dx - 0.08 * disagreement).powi(2) + (dy + 0.025).powi(2)).sqrt();
+                let left_distance =
+                    ((dx + 0.07 * disagreement).powi(2) + (dy - 0.02).powi(2)).sqrt();
+                let right_distance =
+                    ((dx - 0.08 * disagreement).powi(2) + (dy + 0.025).powi(2)).sqrt();
                 let lobe_radius = (base_radius * 0.82).max(0.03);
                 let left = (-(left_distance / lobe_radius).powi(2)).exp() * fill;
                 let right = (-(right_distance / lobe_radius).powi(2)).exp() * fill;
                 add_light(&mut linear, ROSE, left * (0.045 + 0.19 * disagreement));
                 add_light(&mut linear, AMBER, right * (0.040 + 0.16 * disagreement));
 
-                let split = (0.5
-                    + 0.5 * (dx * 19.0 + dy * 8.0 + phase * 1.1).sin())
-                .powf(8.0)
-                    * fill;
-                add_light(&mut linear, ICE, split * (0.012 + 0.065 * (1.0 - confidence)));
+                let split =
+                    (0.5 + 0.5 * (dx * 19.0 + dy * 8.0 + phase * 1.1).sin()).powf(8.0) * fill;
+                add_light(
+                    &mut linear,
+                    ICE,
+                    split * (0.012 + 0.065 * (1.0 - confidence)),
+                );
                 add_light(&mut linear, ROSE, shell * (0.018 + 0.085 * disagreement));
             } else {
                 // Stable belief is intentionally translucent: nested iso-probability contours make
@@ -121,8 +122,7 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
             }
 
             let fragment = (0.5
-                + 0.5
-                    * (angle * 7.0 - phase * 0.41 + (angle * 3.0).sin() * 1.3).sin())
+                + 0.5 * (angle * 7.0 - phase * 0.41 + (angle * 3.0).sin() * 1.3).sin())
             .powf(6.0);
             add_light(
                 &mut linear,
@@ -133,15 +133,18 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
             for index in 0..modality_count {
                 let index_f = index as f64;
                 let node_angle = index_f * 2.399_963 + phase * 0.13;
-                let node_radius = base_radius
-                    + 0.055
-                    + 0.012 * (index_f * 2.1 + phase * 0.20).sin();
+                let node_radius =
+                    base_radius + 0.055 + 0.012 * (index_f * 2.1 + phase * 0.20).sin();
                 let node_x = node_radius * node_angle.cos();
                 let node_y = node_radius * 0.90 * node_angle.sin();
                 let distance = ((dx - node_x).powi(2) + (dy - node_y).powi(2)).sqrt();
                 let glow = (-(distance / 0.025).powi(2)).exp();
                 let dot = (-(distance / 0.007).powi(2)).exp();
-                let color = if contested && index % 2 == 1 { AMBER } else { TEAL };
+                let color = if contested && index % 2 == 1 {
+                    AMBER
+                } else {
+                    TEAL
+                };
                 add_light(
                     &mut linear,
                     color,
@@ -164,7 +167,12 @@ pub fn belief_frame(width: u32, height: u32, tick: u32, belief: BeliefSnapshot) 
 mod tests {
     use super::*;
 
-    fn snapshot(probability: f64, confidence: f64, disagreement: f64, state: BeliefState) -> BeliefSnapshot {
+    fn snapshot(
+        probability: f64,
+        confidence: f64,
+        disagreement: f64,
+        state: BeliefState,
+    ) -> BeliefSnapshot {
         BeliefSnapshot {
             occupancy_probability: probability,
             confidence,
@@ -193,7 +201,7 @@ mod tests {
     fn evidence_modality_count_is_visible() {
         let mut low = snapshot(0.7, 0.8, 0.1, BeliefState::Stable);
         low.observed_modalities = 1;
-        let mut high = low.clone();
+        let mut high = low;
         high.observed_modalities = 5;
         assert_ne!(
             belief_frame(64, 40, 4, low).into_raw(),
