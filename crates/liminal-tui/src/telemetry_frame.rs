@@ -459,6 +459,40 @@ mod tests {
     }
 
     #[test]
+    fn wifi_network_density_has_an_independent_visual_consequence() {
+        let sparse = TelemetrySnapshot {
+            wifi_network_count: Some(1.0),
+            ..TelemetrySnapshot::default()
+        };
+        let dense = TelemetrySnapshot {
+            wifi_network_count: Some(12.0),
+            ..TelemetrySnapshot::default()
+        };
+        assert_ne!(
+            spectral_frame(64, 40, 5, &sparse).into_raw(),
+            spectral_frame(64, 40, 5, &dense).into_raw()
+        );
+    }
+
+    #[test]
+    fn bluetooth_rssi_has_an_independent_visual_consequence() {
+        let weak = TelemetrySnapshot {
+            bluetooth_cluster_count: Some(4.0),
+            bluetooth_mean_rssi: Some(-92.0),
+            ..TelemetrySnapshot::default()
+        };
+        let strong = TelemetrySnapshot {
+            bluetooth_cluster_count: Some(4.0),
+            bluetooth_mean_rssi: Some(-35.0),
+            ..TelemetrySnapshot::default()
+        };
+        assert_ne!(
+            spectral_frame(64, 40, 5, &weak).into_raw(),
+            spectral_frame(64, 40, 5, &strong).into_raw()
+        );
+    }
+
+    #[test]
     fn live_field_contains_multiple_visual_accents() {
         let frame = spectral_frame(96, 64, 11, &demo_telemetry());
         let cyan_like = frame
