@@ -1,8 +1,9 @@
 //! TUI mode navigation.
 //!
-//! Master plan reference: §72 (Native Visual Experience -- SPECTRAL/BELIEF/MEMORY/FIELD NOTES/
-//! REFERENCE modes). Per the 2026-08-26 architecture pivot (ROADMAP.md), these modes now live in
-//! the Rust TUI as the primary interface, not a native SwiftUI/Metal app.
+//! The enum retains the master-plan names internally, while the operator labels are deliberately
+//! plain-language and numbered so the keyboard shortcut and the screen purpose are visible in the
+//! same place. REFERENCE is presented as POSE because that is what the screen actually renders;
+//! SPECTRAL is presented as LIVE FIELD because new users should not need project lore to navigate.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -26,12 +27,12 @@ impl Mode {
 
     pub fn title(&self) -> &'static str {
         match self {
-            Mode::Spectral => "SPECTRAL",
-            Mode::Belief => "BELIEF",
-            Mode::Memory => "MEMORY",
-            Mode::FieldNotes => "FIELD NOTES",
-            Mode::Reference => "REFERENCE",
-            Mode::Calibration => "CALIBRATION",
+            Mode::Spectral => "1 LIVE FIELD",
+            Mode::Belief => "2 BELIEF",
+            Mode::Memory => "3 MEMORY",
+            Mode::FieldNotes => "4 NOTES",
+            Mode::Reference => "5 POSE",
+            Mode::Calibration => "6 CALIBRATE",
         }
     }
 
@@ -78,5 +79,12 @@ mod tests {
         for (i, mode) in Mode::ALL.iter().enumerate() {
             assert_eq!(Mode::from_index(i), *mode);
         }
+    }
+
+    #[test]
+    fn operator_labels_explain_the_shortcuts() {
+        assert_eq!(Mode::Spectral.title(), "1 LIVE FIELD");
+        assert_eq!(Mode::Reference.title(), "5 POSE");
+        assert_eq!(Mode::Calibration.title(), "6 CALIBRATE");
     }
 }
