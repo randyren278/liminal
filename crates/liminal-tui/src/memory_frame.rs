@@ -70,9 +70,7 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
         for x in 0..width {
             let fx = (x as f64 + 0.5) / width as f64;
             let fy = (y as f64 + 0.5) / height as f64;
-            let grain = 0.5
-                + 0.5
-                    * (fx * 101.3 + fy * 77.7 + ((fx - fy) * 29.0).sin()).sin();
+            let grain = 0.5 + 0.5 * (fx * 101.3 + fy * 77.7 + ((fx - fy) * 29.0).sin()).sin();
             let grid_phase = (fx * 8.0).fract();
             let grid_distance = grid_phase.min(1.0 - grid_phase);
             let grid = (-(grid_distance / 0.018).powi(2)).exp();
@@ -127,8 +125,7 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
     let mut density = [[0u32; DENSITY_BINS]; LANES];
     for observation in observations {
         let lane = lane_for_stream(&observation.stream);
-        let normalized =
-            ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
+        let normalized = ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
         let bin = (normalized * (DENSITY_BINS - 1) as f64) as usize;
         density[lane][bin] = density[lane][bin].saturating_add(1);
     }
@@ -149,7 +146,8 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
             if count == 0 {
                 continue;
             }
-            let center_x = (bin as f64 / (DENSITY_BINS - 1) as f64) * width.saturating_sub(1) as f64;
+            let center_x =
+                (bin as f64 / (DENSITY_BINS - 1) as f64) * width.saturating_sub(1) as f64;
             let amplitude = (count as f64 / max_density).powf(0.55);
             let x_start = (center_x as i32 - 3).max(0);
             let x_end = (center_x as i32 + 3).min(width as i32 - 1);
@@ -173,12 +171,11 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
     for (index, observation) in observations.iter().enumerate() {
         let lane = lane_for_stream(&observation.stream);
         let color = color_for_lane(lane);
-        let normalized =
-            ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
+        let normalized = ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
         let center_x = normalized * width.saturating_sub(1) as f64;
         let lane_center = (lane as f64 + 0.5) / LANES as f64;
-        let jitter = 0.025
-            * (index as f64 * 12.9898 + observation.timestamp_us as f64 * 0.000_001).sin();
+        let jitter =
+            0.025 * (index as f64 * 12.9898 + observation.timestamp_us as f64 * 0.000_001).sin();
         let center_y = (lane_center + jitter) * height as f64;
         let x_start = (center_x as i32 - 10).max(0);
         let x_end = (center_x as i32 + 10).min(width as i32 - 1);
@@ -281,7 +278,10 @@ mod tests {
                 })
             })
             .count();
-        assert!(non_dark_rows > 8, "memory events collapsed into a flat single-row chart");
+        assert!(
+            non_dark_rows > 8,
+            "memory events collapsed into a flat single-row chart"
+        );
     }
 
     #[test]
@@ -300,6 +300,9 @@ mod tests {
         let burst = frame.get_pixel(1, lane_y);
         let gap_luma = u32::from(gap[0]) + u32::from(gap[1]) + u32::from(gap[2]);
         let burst_luma = u32::from(burst[0]) + u32::from(burst[1]) + u32::from(burst[2]);
-        assert!(gap_luma < burst_luma, "memory renderer interpolated across an evidence gap");
+        assert!(
+            gap_luma < burst_luma,
+            "memory renderer interpolated across an evidence gap"
+        );
     }
 }
