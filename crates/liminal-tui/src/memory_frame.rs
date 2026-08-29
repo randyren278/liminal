@@ -37,7 +37,7 @@ fn add_light(target: &mut [f64; 3], color: [f64; 3], amount: f64) {
 }
 
 fn encode(value: f64) -> u8 {
-    let value = value.clamp(0.0, 1.0);
+    let value = value.clamp(0.0_f64, 1.0_f64);
     let encoded = if value <= 0.0031308 {
         value * 12.92
     } else {
@@ -55,6 +55,10 @@ fn finish_pixel(mut linear: [f64; 3]) -> Rgb<u8> {
         *channel = luma + (*channel - luma) * 1.16;
     }
     Rgb([encode(linear[0]), encode(linear[1]), encode(linear[2])])
+}
+
+fn normalized_time(timestamp_us: i64, min_timestamp: i64, span: f64) -> f64 {
+    ((timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0)
 }
 
 /// Render timestamped observations as a luminous multi-track memory field. Events are never joined
@@ -125,7 +129,7 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
     let mut density = [[0u32; DENSITY_BINS]; LANES];
     for observation in observations {
         let lane = lane_for_stream(&observation.stream);
-        let normalized = ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
+        let normalized = normalized_time(observation.timestamp_us, min_timestamp, span);
         let bin = (normalized * (DENSITY_BINS - 1) as f64) as usize;
         density[lane][bin] = density[lane][bin].saturating_add(1);
     }
@@ -171,7 +175,7 @@ pub fn memory_frame(width: u32, height: u32, observations: &[RecentObservation])
     for (index, observation) in observations.iter().enumerate() {
         let lane = lane_for_stream(&observation.stream);
         let color = color_for_lane(lane);
-        let normalized = ((observation.timestamp_us - min_timestamp) as f64 / span).clamp(0.0, 1.0);
+        let normalized = normalized_time(observation.timestamp_us, min_timestamp, span);
         let center_x = normalized * width.saturating_sub(1) as f64;
         let lane_center = (lane as f64 + 0.5) / LANES as f64;
         let jitter =
@@ -238,6 +242,12 @@ mod tests {
         let empty = memory_frame(32, 16, &[]);
         let live = memory_frame(32, 16, &[observation("camera", 10)]);
         assert_ne!(empty.into_raw(), live.into_raw());
+    }
+
+    #[test]
+    fn normalized_time_clamps_beyond_the_visible_window() {
+        assert_eq!(normalized_time(-50, 0, 100.0), 0.0);
+        assert_eq!(normalized_time(150, 0, 100.0), 1.0);
     }
 
     #[test]
