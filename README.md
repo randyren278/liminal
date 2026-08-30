@@ -7,7 +7,7 @@
 <h1 align="center">Liminal</h1>
 
 <p align="center">
-  <em>Machine perception at the edge of reality.</em>
+  <em>Machine perception.</em>
 </p>
 
 <p align="center">
