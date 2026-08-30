@@ -10,8 +10,9 @@ Capture date: 2026-08-29 (America/Vancouver)
 
 Refreshed capture source: `eb4b9ea` (`Refresh live TUI documentation and
 launcher reliability`). The live-field image was captured from the equivalent
-working tree immediately before that commit. Terminal: macOS Terminal,
-halfblock compatibility renderer.
+working tree immediately before that commit and committed as an artifact in
+`d5f5c11`. SHA-256: `56142c408728e5e1d173fb35b2fbf1593892c3a3e4be74404bcff6fe9a29d2cd`.
+Terminal: macOS Terminal, halfblock compatibility renderer.
 
 | Image | Surface | Launch / evidence | Sensor state | Live/demo | Raw media |
 |---|---|---|---|---|---|

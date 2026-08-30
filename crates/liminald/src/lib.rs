@@ -232,7 +232,15 @@ fn validate_feature_payload(stream: &str, features: &serde_json::Value) -> Resul
                     if cluster_object
                         .get("pseudonym")
                         .and_then(serde_json::Value::as_str)
-                        .is_none_or(|pseudonym| pseudonym.len() > MAX_DERIVED_STRING_BYTES)
+                        .is_none_or(|pseudonym| {
+                            let digest = pseudonym.strip_prefix("ble:");
+                            digest.is_none_or(|digest| {
+                                digest.len() != 64
+                                    || !digest.bytes().all(|byte| {
+                                        byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
+                                    })
+                            }) || pseudonym.len() > MAX_DERIVED_STRING_BYTES
+                        })
                         || !cluster_object
                             .get("rssi")
                             .is_some_and(serde_json::Value::is_number)
@@ -737,6 +745,32 @@ mod tests {
             IngestError::ForbiddenFeatureField { field, .. } if field == "joints[].raw_frame"
         ));
         assert!(ledger.events().unwrap().is_empty());
+
+        let mut bluetooth = sample_envelope_with_sequence("bt-1", "bluetooth", 1, 1_000);
+        bluetooth.payload =
+            br#"{"clusters":[{"pseudonym":"AA:BB:CC:DD:EE:FF","rssi":-50}],"cluster_count":1}"#
+                .to_vec();
+        let err = ingest_envelope(&mut ledger, &bluetooth).unwrap_err();
+        assert!(
+            matches!(err, IngestError::InvalidFeatureShape { stream } if stream == "bluetooth")
+        );
+        assert!(ledger.events().unwrap().is_empty());
+
+        bluetooth.payload = format!(
+            r#"{{"clusters":[{{"pseudonym":"ble:{}","rssi":-50}}],"cluster_count":1}}"#,
+            "0".repeat(64)
+        )
+        .into_bytes();
+        ingest_envelope(&mut ledger, &bluetooth).unwrap();
+        assert_eq!(
+            ledger
+                .events()
+                .unwrap()
+                .iter()
+                .filter(|event| event.kind == "observation")
+                .count(),
+            1
+        );
 
         std::fs::remove_file(&path).unwrap();
     }

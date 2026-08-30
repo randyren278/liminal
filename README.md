@@ -159,6 +159,15 @@ swiftformat --lint .
 swift run liminal-doctor --json
 ```
 
+The mutation guard runs one green workspace baseline, then uses the owning
+package's suite for each of the 43 handcrafted invariant breaks. If a scoped
+suite stays green, it falls back to the full workspace before declaring that
+mutation survived. Every mutant must also pass a package compile-only gate;
+compiler errors are rejected rather than counted as kills. For a quick local rerun of one failure, add
+`--only <mutation-id> --assert-min 1`. CI runs nine isolated package shards
+and accepts them only when the aggregate report contains every manifest ID
+exactly once and every verdict is `KILLED`.
+
 Useful operator commands:
 
 ```bash

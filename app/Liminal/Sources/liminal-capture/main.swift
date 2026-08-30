@@ -46,9 +46,47 @@ var visionCoordinator: VisionCaptureCoordinator?
 var audioCoordinator: AudioCaptureCoordinator?
 var bluetoothCoordinator: BluetoothScanCoordinator?
 
+/// Sensor callbacks run on different queues. Keep sequence persistence and socket writes on one
+/// serial queue so length-delimited frames cannot interleave and capture callbacks never block on
+/// filesystem or Unix-socket I/O.
+let featureWriterQueue = DispatchQueue(label: "liminal.capture.feature-writer")
+let pendingFeatures = CoalescingFeatureBuffer()
+
 /// Shared by both organs: builds and sends one envelope, falling back to stdout on any send
 /// failure (including "never connected in the first place").
 func sendFeatures(streamId: String, payload: Data) {
+    let capturedAtUtcUs = Int64(Date().timeIntervalSince1970 * 1_000_000)
+    let capturedAtMonoUs = Int64(DispatchTime.now().uptimeNanoseconds / 1000)
+    let feature = PendingFeature(
+        streamId: streamId,
+        payload: payload,
+        capturedAtUtcUs: capturedAtUtcUs,
+        capturedAtMonoUs: capturedAtMonoUs,
+    )
+    if pendingFeatures.submit(feature) {
+        featureWriterQueue.async { drainPendingFeatures() }
+    }
+}
+
+func drainPendingFeatures() {
+    while let batch = pendingFeatures.takeBatch() {
+        for pending in batch {
+            persistAndSendFeatures(
+                streamId: pending.streamId,
+                payload: pending.payload,
+                capturedAtUtcUs: pending.capturedAtUtcUs,
+                capturedAtMonoUs: pending.capturedAtMonoUs,
+            )
+        }
+    }
+}
+
+func persistAndSendFeatures(
+    streamId: String,
+    payload: Data,
+    capturedAtUtcUs: Int64,
+    capturedAtMonoUs: Int64,
+) {
     let currentSequence: UInt64
     do {
         currentSequence = try sequenceAllocator.next(for: streamId)
@@ -57,16 +95,24 @@ func sendFeatures(streamId: String, payload: Data) {
         return
     }
 
-    let nowUtcUs = Int64(Date().timeIntervalSince1970 * 1_000_000)
-    let nowMonoUs = Int64(DispatchTime.now().uptimeNanoseconds / 1000)
     let envelope = makeEnvelope(
         messageId: UUID().uuidString,
         sensorStreamId: streamId,
         monotonicSequence: currentSequence,
-        capturedAtUtcUs: nowUtcUs,
-        capturedAtMonoUs: nowMonoUs,
+        capturedAtUtcUs: capturedAtUtcUs,
+        capturedAtMonoUs: capturedAtMonoUs,
         payload: payload,
     )
+
+    if socketClient == nil {
+        do {
+            socketClient = try UnixSocketClient(path: socketPath)
+            print("liminal-capture: reconnected to \(socketPath)")
+        } catch {
+            // The daemon may be restarting. Keep the derived fallback visible and retry on the
+            // next serialized feature without blocking the sensor callback that produced it.
+        }
+    }
 
     if let client = socketClient {
         do {

@@ -69,7 +69,11 @@ where
         match stream {
             Ok(stream) => {
                 println!("liminald: accepted a connection");
-                if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+                // Wi-Fi scans are intentionally sparse (45s by default, with a 30-60s design
+                // budget), and capture can spend time in permission/setup before its first
+                // sample. Keep an idle client alive across that cadence while still bounding
+                // abandoned connections.
+                if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(120))) {
                     eprintln!("liminald: failed to set client read timeout: {error}");
                     continue;
                 }

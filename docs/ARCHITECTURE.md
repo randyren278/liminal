@@ -329,7 +329,11 @@ python3 checks/coverage_gate.py --manifest checks/mutations.json --report target
 ```
 
 CI (`.github/workflows/ci.yml`) runs all four on every push and pull
-request, plus `checks/docs_gate.py` against this file and the README.
+request, plus `checks/docs_gate.py` against this file and the README. Mutation
+verification keeps the full workspace as its baseline and fallback, but runs
+the known killing package suite first after proving the mutant compiles. Nine disposable CI checkouts execute
+the package scopes concurrently; a final verifier rejects missing, duplicate,
+unknown, stale, timed-out, surviving, mixed-commit, or mixed-manifest results.
 `liminal export` writes an explicit local JSON bundle only after scanning every
 selected payload for forbidden keys. It preserves hash fields and provenance
 sources, supports timestamp ranges, and performs no deletion or network I/O.
