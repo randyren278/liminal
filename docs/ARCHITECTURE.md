@@ -30,7 +30,7 @@ flowchart TB
         Memory["liminal-memory: occupancy segmentation and structural replay projected into TUI"]
     end
     CLI["liminal-cli: privacy audit, event browsing, event history"]
-    TUI["liminal-tui: PRIMARY interface -- telemetry field, first-pass BELIEF, REFERENCE skeleton"]
+    TUI["liminal-tui: PRIMARY interface -- LIVE FIELD, BELIEF, MEMORY, NOTES, POSE, CALIBRATE"]
 
     Doctor -.->|"SensoriumProfile JSON (same shape, not yet wired)"| Schema
     Sensors -->|"real IPC envelope over Unix socket -- verified end-to-end with a manual test client"| IPC
@@ -119,7 +119,7 @@ so far:
   connects over a real Unix socket and the resulting SQLite row was
   inspected directly (not just asserted in a test) during development.
 - **`crates/liminal-tui`** — the primary interface (2026-08-26 pivot, above):
-  a six-mode skeleton (SPECTRAL/BELIEF/MEMORY/FIELD NOTES/REFERENCE/CALIBRATION, §72) with
+  six operator modes (`LIVE FIELD`, `BELIEF`, `MEMORY`, `NOTES`, `POSE`, and `CALIBRATE`, §72) with
   `ratatui-image` proven to render real animated bitmap output over the
   terminal's graphics protocol (Kitty/Sixel, auto-detected; halfblock
   fallback otherwise). Now reads `liminal-ledger`'s real SQLite store
@@ -130,13 +130,17 @@ so far:
   allocator persists counters atomically in the local Liminal application
   support directory, so a capture restart cannot reset a stream and later
   manufacture a forward sequence gap.
-  SPECTRAL mode turns the
-  latest acoustic, Wi-Fi, and Bluetooth derived feature values into a live
-  bitmap field and reports recent per-stream observation rates from timestamp
-  spans; BELIEF mode applies a transparent first-pass heuristic to
+  LIVE FIELD turns the latest acoustic, Wi-Fi, and Bluetooth derived feature
+  values into a live bitmap field and reports recent per-stream observation
+  rates from timestamp spans. Cyan/teal interference maps to acoustic
+  features, slow contours/ripples to Wi-Fi, luminous nodes/halos to Bluetooth,
+  refractive distortion to camera presence/motion, and magenta/rose to VAD;
+  quiet dark regions mean weak or absent evidence. These are derived telemetry
+  families, not a physical-scene reconstruction. BELIEF applies a transparent
+  first-pass heuristic to
   camera presence, acoustic activity, and Bluetooth proximity, exposing
   confidence and cross-modality disagreement rather than presenting a
-  trained-classifier claim; REFERENCE mode renders a real skeleton from the most recent
+  trained-classifier claim; POSE renders a real skeleton from the most recent
   `liminal-capture` pose observation when one exists, and MEMORY mode shows
   a recent timestamped observation timeline with sensor streams separated and
   gaps left unfilled; it also exposes a bounded newest-first historical record
@@ -145,7 +149,7 @@ so far:
   widen the in-memory window with `]`
   and narrow it with `[`. It also reports compact populated-day buckets from the
   full ledger, preserving empty days as gaps rather than interpolating them.
-  FIELD NOTES is a read-only provenance surface: it reports ledger facts,
+  NOTES is a read-only provenance surface: it reports ledger facts,
   daemon-belief evidence IDs, bounded persisted Tier-0 agent drafts with their
   stored layer and review status, and system limitations, while marking the Poet's
   text as IMAGINED and withholding uncalibrated conclusions. When no real data has arrived yet,
@@ -157,7 +161,7 @@ so far:
   reference view, which would require a raw frame in the ledger — §120 and
   the Swift↔Rust contract both forbid that, so a skeleton derived from real
   joint data is shown instead, never camera pixels.
-  CALIBRATION is an offline score view: it accepts an optional JSONL file of
+  CALIBRATE is an offline score view: it accepts an optional JSONL file of
   human or approved reference labels, matches those labels to persisted fusion
   beliefs, and reports metrics without changing the live heuristic. Without
   labels it explicitly reports that calibration is unavailable.
@@ -224,7 +228,7 @@ so far:
   (or stdout fallback) via one shared send path, and none persists any raw
   frame, raw continuous audio, SSID/BSSID, or Bluetooth device name to
   disk. The DSP, sanitization, and pseudonymization logic is unit-tested
-  (59 Swift tests across the core and capture support, including a
+  (the Swift verification suite across the core and capture support, including a
   privacy-audit-style test that Wi-Fi/Bluetooth JSON literally cannot
   contain the raw strings that went in). The bounded live acceptance path has
   now observed camera, microphone, and Wi-Fi delivery plus speaker

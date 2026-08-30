@@ -4,7 +4,7 @@ use crate::ledger_view::CalibrationReportView;
 
 pub fn format_report(path: &Path, report: &CalibrationReportView) -> String {
     format!(
-        "CALIBRATION / EXPLICIT LABELS\n\nlabels           {}\nmatched          {}\nunmatched        {}\naccuracy         {:.3}\nBrier score       {:.3}\nprecision         {:.3}\nrecall            {:.3}\n\nSource: {}\nThis is an offline score against human/reference labels. It does not retune the live heuristic.",
+        "CALIBRATE / EXPLICIT LABELS\n\nlabels           {}\nmatched          {}\nunmatched        {}\naccuracy         {:.3}\nBrier score       {:.3}\nprecision         {:.3}\nrecall            {:.3}\n\nSource: {}\nThis is an offline score against human/reference labels. It does not retune the live heuristic.",
         report.labels_total,
         report.matched_labels,
         report.unmatched_labels,
@@ -32,7 +32,7 @@ mod tests {
             positive_recall: 1.0,
         };
         let rendered = format_report(Path::new("trial-labels.jsonl"), &report);
-        assert!(rendered.contains("CALIBRATION / EXPLICIT LABELS"));
+        assert!(rendered.contains("CALIBRATE / EXPLICIT LABELS"));
         assert!(rendered.contains("matched          3"));
         assert!(rendered.contains("Brier score       0.125"));
         assert!(rendered.contains("trial-labels.jsonl"));

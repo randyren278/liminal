@@ -211,7 +211,7 @@ buckets from the full ledger. It reports coverage, not continuity: empty days
 remain empty and no belief or interpretation is synthesized from the counts.
 
 The memory crate now also replays confirmed occupancy Events into deterministic
-Episodes and coarse duration-based Pattern buckets. MEMORY and FIELD NOTES
+Episodes and coarse duration-based Pattern buckets. MEMORY and NOTES
 show those structural counts, while explicitly withholding continuity,
 behavioral, or calibrated recurrence claims.
 
@@ -237,13 +237,13 @@ privacy-audited local `export` command with optional timestamp bounds. Export
 is additive and non-destructive; retention remains a policy decision rather
 than an implicit delete.
 
-The CUI now includes an explicit CALIBRATION mode. With `--labels PATH`, it
+The TUI now includes an explicit CALIBRATE mode. With `--labels PATH`, it
 matches a human/reference JSONL label file against persisted daemon fusion
 beliefs and displays offline accuracy, Brier score, precision, and recall;
 without labels it says calibration is unavailable. This view never retunes the
 live heuristic and does not treat sensor output as its own ground truth.
 
-The CUI operator contract is also now represented in the live console: `p`
+The TUI operator contract is also now represented in the live console: `p`
 pauses/resumes polling, `v` toggles the vision-derived reference off for a
 nonvisual telemetry view, the status panel exposes sensor-gap and belief
 counts, and all six modes remain navigable without mutating canonical state.

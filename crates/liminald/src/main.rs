@@ -104,15 +104,6 @@ fn main() {
     let uid = unsafe { libc::getuid() };
     let socket_path = socket_path_for_uid(uid);
 
-    prepare_socket_path(&socket_path).expect("failed to prepare socket path");
-    let listener = UnixListener::bind(&socket_path).expect("failed to bind Unix socket");
-
-    // §15: "0600 socket" -- the file only exists after bind(), so permissions are set here.
-    std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
-        .expect("failed to set socket file permissions");
-
-    println!("liminald: listening on {}", socket_path.display());
-
     let db = default_db_path();
     std::fs::create_dir_all(db.parent().unwrap())
         .expect("failed to create Application Support directory");
@@ -123,6 +114,15 @@ fn main() {
     let ledger = Arc::new(Mutex::new(
         SqliteLedger::open(&db, DEFAULT_MAX_SILENT_GAP_US).expect("failed to open ledger"),
     ));
+
+    prepare_socket_path(&socket_path).expect("failed to prepare socket path");
+    let listener = UnixListener::bind(&socket_path).expect("failed to bind Unix socket");
+
+    // §15: "0600 socket" -- the file only exists after bind(), so permissions are set here.
+    std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
+        .expect("failed to set socket file permissions");
+
+    println!("liminald: listening on {}", socket_path.display());
 
     let (connection_sender, connection_receiver) = connection_queue();
     spawn_connection_workers(&connection_receiver, &ledger);

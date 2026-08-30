@@ -103,7 +103,7 @@ pub fn build_field_notes(snapshot: &LedgerSnapshot) -> Vec<FieldNote> {
 }
 
 pub fn format_field_notes(notes: &[FieldNote]) -> String {
-    let mut output = String::from("FIELD NOTES / READ-ONLY\n\n");
+    let mut output = String::from("NOTES / READ-ONLY\n\n");
     for (index, note) in notes.iter().enumerate() {
         if index > 0 {
             output.push_str("\n\n");

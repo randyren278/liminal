@@ -675,11 +675,11 @@ fn mode_body(
             Some(s) if !s.stream_event_counts.is_empty() => {
                 format_field_notes(&build_field_notes(s))
             }
-            _ => "FIELD NOTES / WAITING\n\nNo ledger observations are available. Notes stay empty rather than manufacturing a story from missing data.".to_string(),
+            _ => "NOTES / WAITING\n\nNo ledger observations are available. Notes stay empty rather than manufacturing a story from missing data.".to_string(),
         },
         Mode::Reference => match snapshot {
             Some(s) if vision_enabled && !s.latest_camera_joints.is_empty() => format!(
-                "REFERENCE / POSE DATA ACTIVE. {} joint(s) from the most recent liminal-capture \
+                "POSE DATA ACTIVE. {} joint(s) from the most recent liminal-capture \
                  observation, out of {} total ingested events. This is a skeleton derived from \
                  real Vision output -- never a camera image (§120: zero raw frames persisted or \
                  transmitted).",
@@ -688,13 +688,13 @@ fn mode_body(
             ),
             _ if !vision_enabled => "Vision display is OFF. The panel below uses only nonvisual \
                   derived telemetry; press `v` to restore the pose reference view.".to_string(),
-            _ => "Calibration/debug view. No real pose data ingested yet -- the panel below is a \
+            _ => "POSE / WAITING. No real pose data ingested yet -- the panel below is a \
                   SYNTHETIC DEMO PATTERN proving real bitmap rendering over your terminal's \
                   graphics protocol. Run liminald and liminal-capture to see real data here."
                 .to_string(),
         },
         Mode::Calibration => match labels_path {
-            None => "CALIBRATION / NO LABEL FILE\n\nNo human or approved reference labels were supplied. This view will not treat sensor output as ground truth.\n\nRun with `--labels /path/to/trial-labels.jsonl` to show offline accuracy, Brier score, precision, and recall.".to_string(),
+            None => "CALIBRATE / NO LABEL FILE\n\nNo human or approved reference labels were supplied. This view will not treat sensor output as ground truth.\n\nRun with `--labels /path/to/trial-labels.jsonl` to show offline accuracy, Brier score, precision, and recall.".to_string(),
             Some(path) => match snapshot {
                 Some(_) => match ledger_view::read_calibration_report_checked(
                     &liminal_ledger::default_db_path(),
@@ -702,15 +702,15 @@ fn mode_body(
                 ) {
                     Ok(Some(report)) => calibration_view::format_report(path, &report),
                     Ok(None) => format!(
-                        "CALIBRATION / NO MATCHES\n\nThe supplied labels at {} did not match any persisted daemon fusion belief within the timestamp window. No live model state was changed.",
+                        "CALIBRATE / NO MATCHES\n\nThe supplied labels at {} did not match any persisted daemon fusion belief within the timestamp window. No live model state was changed.",
                         path.display()
                     ),
                     Err(error) => format!(
-                        "CALIBRATION / LABEL ERROR\n\n{}\n\nThe live heuristic remains unchanged.",
+                        "CALIBRATE / LABEL ERROR\n\n{}\n\nThe live heuristic remains unchanged.",
                         error
                     ),
                 },
-                None => "CALIBRATION / WAITING FOR LEDGER\n\nNo persisted fusion beliefs are available to score against the supplied labels.".to_string(),
+                None => "CALIBRATE / WAITING FOR LEDGER\n\nNo persisted fusion beliefs are available to score against the supplied labels.".to_string(),
             },
         },
     }

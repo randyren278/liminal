@@ -105,8 +105,73 @@ pub enum IngestError {
     SchemaMismatch(#[from] liminal_ipc::SchemaMismatch),
     #[error("payload is not valid JSON: {0}")]
     InvalidPayload(#[source] serde_json::Error),
+    #[error("unsupported sensor stream: {0}")]
+    UnsupportedSensorStream(String),
+    #[error("sensor payload for '{stream}' must be a JSON object")]
+    InvalidFeatureShape { stream: String },
+    #[error("sensor payload field '{field}' is not allowed for stream '{stream}'")]
+    ForbiddenFeatureField { stream: String, field: String },
     #[error(transparent)]
     Ledger(#[from] liminal_ledger::LedgerError),
+}
+
+fn validate_feature_payload(stream: &str, features: &serde_json::Value) -> Result<(), IngestError> {
+    let allowed: &[&str] = match stream {
+        "camera" => &["body_count", "joints"],
+        "microphone" => &[
+            "rms",
+            "peak",
+            "zero_crossing_rate",
+            "spectral_centroid_hz",
+            "spectral_rolloff_hz",
+            "spectral_flatness",
+            "voice_activity_probability",
+        ],
+        "wifi" => &[
+            "rssi_mean",
+            "noise_mean",
+            "visible_network_count",
+            "strongest_1",
+            "strongest_2",
+            "strongest_3",
+        ],
+        "bluetooth" => &["clusters", "cluster_count"],
+        other => return Err(IngestError::UnsupportedSensorStream(other.to_string())),
+    };
+    let object = features
+        .as_object()
+        .ok_or_else(|| IngestError::InvalidFeatureShape {
+            stream: stream.to_string(),
+        })?;
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(IngestError::ForbiddenFeatureField {
+                stream: stream.to_string(),
+                field: key.clone(),
+            });
+        }
+    }
+    if stream == "bluetooth" {
+        if let Some(clusters) = object.get("clusters").and_then(serde_json::Value::as_array) {
+            for cluster in clusters {
+                let cluster_object =
+                    cluster
+                        .as_object()
+                        .ok_or_else(|| IngestError::InvalidFeatureShape {
+                            stream: stream.to_string(),
+                        })?;
+                for key in cluster_object.keys() {
+                    if !matches!(key.as_str(), "pseudonym" | "rssi") {
+                        return Err(IngestError::ForbiddenFeatureField {
+                            stream: stream.to_string(),
+                            field: format!("clusters[].{key}"),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -315,6 +380,7 @@ pub fn ingest_envelope(ledger: &mut SqliteLedger, envelope: &Envelope) -> Result
     }
     let mut features: serde_json::Value =
         serde_json::from_slice(&envelope.payload).map_err(IngestError::InvalidPayload)?;
+    validate_feature_payload(&envelope.sensor_stream_id, &features)?;
     if let Some(last_sequence) = ledger.last_monotonic_sequence(&envelope.sensor_stream_id) {
         if envelope.monotonic_sequence > last_sequence.saturating_add(1) {
             ledger.record_sensor_gap(
@@ -327,12 +393,13 @@ pub fn ingest_envelope(ledger: &mut SqliteLedger, envelope: &Envelope) -> Result
             )?;
         }
     }
-    if let Some(object) = features.as_object_mut() {
-        object.insert(
+    features
+        .as_object_mut()
+        .expect("validated feature object")
+        .insert(
             "_monotonic_sequence".to_string(),
             serde_json::Value::from(envelope.monotonic_sequence),
         );
-    }
     ledger.append_observation_with_features(
         envelope.message_id.clone(),
         &envelope.sensor_stream_id,
@@ -536,6 +603,26 @@ mod tests {
         let envelope = sample_envelope(1, b"not json");
         let err = ingest_envelope(&mut ledger, &envelope).unwrap_err();
         assert!(matches!(err, IngestError::InvalidPayload(_)));
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn ingest_envelope_rejects_raw_or_unknown_sensor_fields_before_persistence() {
+        let path = std::env::temp_dir().join(format!(
+            "liminald-ingest-test-privacy-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut ledger = SqliteLedger::open(&path, 30_000_000).unwrap();
+
+        let envelope = sample_envelope(1, br#"{"body_count":"one","raw_frame":"pixels"}"#);
+        let err = ingest_envelope(&mut ledger, &envelope).unwrap_err();
+        assert!(matches!(
+            err,
+            IngestError::ForbiddenFeatureField { field, .. } if field == "raw_frame"
+        ));
+        assert!(ledger.events().unwrap().is_empty());
 
         std::fs::remove_file(&path).unwrap();
     }
