@@ -144,8 +144,12 @@ jobs:
 
   mutation-verdict:
     name: Mutation guard (exact 43-mutant verdict)
-    needs: mutation
-    if: always()
+    needs: [deterministic, mutation]
+    # If the deterministic prerequisite fails, the mutation matrix is skipped
+    # by GitHub and there are intentionally no reports to aggregate. Preserve
+    # that root failure; otherwise still aggregate partial reports so a
+    # failed shard cannot hide missing mutation results.
+    if: always() && needs.deterministic.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

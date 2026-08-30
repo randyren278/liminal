@@ -974,4 +974,175 @@ mod tests {
 
         std::fs::remove_file(&path).unwrap();
     }
+
+    #[test]
+    fn validate_feature_payload_rejects_malformed_sensor_shapes() {
+        use serde_json::json;
+
+        assert!(matches!(
+            validate_feature_payload("unknown", &json!({})),
+            Err(IngestError::UnsupportedSensorStream(stream)) if stream == "unknown"
+        ));
+        assert!(matches!(
+            validate_feature_payload("camera", &json!(null)),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+        assert!(matches!(
+            validate_feature_payload("camera", &json!({"body_count":"many"})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+        assert!(matches!(
+            validate_feature_payload("camera", &json!({"body_count":"one", "joints":{}})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+
+        let too_many_joints = (0..=MAX_DERIVED_COLLECTION_ITEMS)
+            .map(|_| json!({"name":"nose", "x":0.5, "y":0.5, "confidence":1.0}))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            validate_feature_payload(
+                "camera",
+                &json!({"body_count":"one", "joints":too_many_joints})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "camera",
+                &json!({"body_count":"one", "joints":[null]})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "camera",
+                &json!({"body_count":"one", "joints":[{"x":0.5, "y":0.5, "confidence":1.0}]})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "camera",
+                &json!({"body_count":"one", "joints":[{"name":"nose", "y":0.5, "confidence":1.0}]})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "camera"
+        ));
+
+        assert!(validate_feature_payload(
+            "wifi",
+            &json!({
+                "rssi_mean":-50.0,
+                "noise_mean":-90.0,
+                "visible_network_count":3,
+                "strongest_1":-40,
+                "strongest_2":-50,
+                "strongest_3":-60
+            })
+        )
+        .is_ok());
+        assert!(matches!(
+            validate_feature_payload("microphone", &json!({"rms":"loud"})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "microphone"
+        ));
+        assert!(matches!(
+            validate_feature_payload("wifi", &json!({"rssi_mean":"strong"})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "wifi"
+        ));
+
+        assert!(matches!(
+            validate_feature_payload("bluetooth", &json!({"cluster_count":"many"})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        assert!(matches!(
+            validate_feature_payload("bluetooth", &json!({"clusters":{}})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        let too_many_clusters = (0..=MAX_DERIVED_COLLECTION_ITEMS)
+            .map(|_| json!({"pseudonym":"ble:0000000000000000000000000000000000000000000000000000000000000000", "rssi":-50}))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            validate_feature_payload(
+                "bluetooth",
+                &json!({"clusters":too_many_clusters})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        assert!(matches!(
+            validate_feature_payload("bluetooth", &json!({"clusters":[null]})),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "bluetooth",
+                &json!({"clusters":[{"pseudonym":"ble:0000000000000000000000000000000000000000000000000000000000000000", "rssi":-50, "extra":true}]})
+            ),
+            Err(IngestError::ForbiddenFeatureField { field, .. }) if field == "clusters[].extra"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "bluetooth",
+                &json!({"clusters":[{"pseudonym":"ble:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "rssi":-50}]})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        assert!(matches!(
+            validate_feature_payload(
+                "bluetooth",
+                &json!({"clusters":[{"pseudonym":"ble:0000000000000000000000000000000000000000000000000000000000000000"}]})
+            ),
+            Err(IngestError::InvalidFeatureShape { stream }) if stream == "bluetooth"
+        ));
+        assert!(validate_feature_payload(
+            "bluetooth",
+            &json!({"clusters":[{"pseudonym":"ble:0000000000000000000000000000000000000000000000000000000000000000", "rssi":-50}]})
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn derive_belief_features_handles_empty_and_stable_all_modality_inputs() {
+        use serde_json::json;
+
+        assert!(derive_belief_features(&[], "none", 0).is_none());
+
+        let path = std::env::temp_dir().join(format!(
+            "liminald-fusion-all-modalities-test-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut ledger = SqliteLedger::open(&path, 30_000_000).unwrap();
+        ledger
+            .append_observation_with_features(
+                "camera-1",
+                "camera",
+                1_000,
+                json!({"body_count":"one"}),
+            )
+            .unwrap();
+        ledger
+            .append_observation_with_features(
+                "mic-1",
+                "microphone",
+                1_000,
+                json!({"voice_activity_probability":0.8}),
+            )
+            .unwrap();
+        ledger
+            .append_observation_with_features(
+                "bt-1",
+                "bluetooth",
+                1_000,
+                json!({"cluster_count":3.2}),
+            )
+            .unwrap();
+
+        let features = derive_belief_features(&ledger.events().unwrap(), "camera-1", 1_000)
+            .expect("fresh all-modality evidence should produce a belief");
+        assert_eq!(features["observed_modalities"], 3);
+        assert_eq!(features["state"], "stable");
+        assert_eq!(features["sensor_health"], 1.0);
+        assert!(features["confidence"].as_f64().unwrap() > 0.0);
+
+        std::fs::remove_file(&path).unwrap();
+    }
 }
