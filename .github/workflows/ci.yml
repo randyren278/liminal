@@ -58,7 +58,6 @@ jobs:
         run: |
           python3 checks/docs_gate.py --root . README.md
           python3 checks/docs_gate.py --root . --min-diagrams 1 docs/ARCHITECTURE.md
-          python3 checks/docs_gate.py --root . docs/screenshots/README.md
 
       - name: Mutation harness tests
         run: >-

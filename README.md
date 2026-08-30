@@ -36,9 +36,7 @@ timeline. Raw video and audio do not enter the ledger.
 This fresh macOS Terminal capture is from the real launcher and live sensor
 path. The ledger was receiving derived observations while it was taken. Live
 sensor values control the artwork's intensity and shape; darker regions mean
-that a modality is absent or weak, not that raw media is being displayed. See
-the [screenshot provenance record](docs/screenshots/README.md) for the exact
-capture context.
+that a modality is absent or weak, not that raw media is being displayed.
 
 Liminal is a working local prototype, not a finished sensing product. The Rust
 ledger, Unix-socket daemon, TUI, privacy boundaries, and Swift feature
