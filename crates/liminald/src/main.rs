@@ -4,6 +4,7 @@ use std::io;
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use liminal_ledger::{SqliteLedger, DEFAULT_MAX_SILENT_GAP_US};
 use liminald::{ingest_envelope, read_length_delimited_envelope};
@@ -68,6 +69,14 @@ where
         match stream {
             Ok(stream) => {
                 println!("liminald: accepted a connection");
+                // Wi-Fi scans are intentionally sparse (45s by default, with a 30-60s design
+                // budget), and capture can spend time in permission/setup before its first
+                // sample. Keep an idle client alive across that cadence while still bounding
+                // abandoned connections.
+                if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(120))) {
+                    eprintln!("liminald: failed to set client read timeout: {error}");
+                    continue;
+                }
                 // A synchronous bounded queue provides backpressure at the connection boundary:
                 // once all workers and 16 queued clients are occupied, accept-loop progress
                 // pauses instead of creating unbounded threads or memory pressure.
@@ -104,15 +113,6 @@ fn main() {
     let uid = unsafe { libc::getuid() };
     let socket_path = socket_path_for_uid(uid);
 
-    prepare_socket_path(&socket_path).expect("failed to prepare socket path");
-    let listener = UnixListener::bind(&socket_path).expect("failed to bind Unix socket");
-
-    // §15: "0600 socket" -- the file only exists after bind(), so permissions are set here.
-    std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
-        .expect("failed to set socket file permissions");
-
-    println!("liminald: listening on {}", socket_path.display());
-
     let db = default_db_path();
     std::fs::create_dir_all(db.parent().unwrap())
         .expect("failed to create Application Support directory");
@@ -123,6 +123,15 @@ fn main() {
     let ledger = Arc::new(Mutex::new(
         SqliteLedger::open(&db, DEFAULT_MAX_SILENT_GAP_US).expect("failed to open ledger"),
     ));
+
+    prepare_socket_path(&socket_path).expect("failed to prepare socket path");
+    let listener = UnixListener::bind(&socket_path).expect("failed to bind Unix socket");
+
+    // §15: "0600 socket" -- the file only exists after bind(), so permissions are set here.
+    std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600))
+        .expect("failed to set socket file permissions");
+
+    println!("liminald: listening on {}", socket_path.display());
 
     let (connection_sender, connection_receiver) = connection_queue();
     spawn_connection_workers(&connection_receiver, &ledger);

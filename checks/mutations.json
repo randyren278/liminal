@@ -1,6 +1,30 @@
 {
   "test_command": "cargo test --workspace",
-  "timeout_seconds": 600,
+  "timeout_seconds": 900,
+  "mutation_test_commands": {
+    "crates/liminal-schema/": "cargo test -p liminal-schema",
+    "crates/liminal-policy/": "cargo test -p liminal-policy",
+    "crates/liminal-ledger/": "cargo test -p liminal-ledger",
+    "crates/liminal-memory/": "cargo test -p liminal-memory",
+    "crates/liminald/": "cargo test -p liminald",
+    "crates/liminal-tui/": "cargo test -p liminal-tui",
+    "crates/liminal-cli/": "cargo test -p liminal-cli"
+  },
+  "mutation_compile_commands": {
+    "crates/liminal-schema/": "cargo test -p liminal-schema --no-run",
+    "crates/liminal-policy/": "cargo test -p liminal-policy --no-run",
+    "crates/liminal-ledger/": "cargo test -p liminal-ledger --no-run",
+    "crates/liminal-memory/": "cargo test -p liminal-memory --no-run",
+    "crates/liminald/": "cargo test -p liminald --no-run",
+    "crates/liminal-tui/": "cargo test -p liminal-tui --no-run",
+    "crates/liminal-cli/": "cargo test -p liminal-cli --no-run"
+  },
+  "mutation_timeout_seconds": {
+    "crates/": 180
+  },
+  "mutation_compile_timeout_seconds": {
+    "crates/": 120
+  },
   "coverage_floor": 95.0,
   "critical_modules": [
     "crates/liminal-schema/src/lib.rs",
@@ -40,8 +64,8 @@
       "id": "wifi-mode-a-leaks-ssid",
       "file": "crates/liminal-policy/src/lib.rs",
       "invariant": "A Wi-Fi Mode A observation never carries a raw SSID/BSSID field -- only anonymous aggregate features.",
-      "find": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n}",
-      "replace": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n    pub ssid: String,\n}"
+      "find": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n}\n\n/// Reduce raw scans to Mode A aggregate features. Mutation test §142.2: if this function is\n/// changed to leak `ssid`/`bssid` into the output, `privacy_audit::scan_json_for_forbidden_keys`\n/// must catch it.\npub fn sanitize_wifi_mode_a(raw: &[RawWifiScanResult]) -> WifiObservationModeA {\n    let count = raw.len().max(1) as f32;\n    let rssi_mean = raw.iter().map(|r| r.rssi as f32).sum::<f32>() / count;\n    let noise_mean = raw.iter().map(|r| r.noise as f32).sum::<f32>() / count;\n    let mut sorted_rssi: Vec<i32> = raw.iter().map(|r| r.rssi).collect();\n    sorted_rssi.sort_unstable_by(|a, b| b.cmp(a));\n    let strongest = |i: usize| *sorted_rssi.get(i).unwrap_or(&i32::MIN);\n    WifiObservationModeA {\n        rssi_mean,\n        noise_mean,\n        visible_network_count: raw.len() as u32,\n        strongest_1: strongest(0),\n        strongest_2: strongest(1),\n        strongest_3: strongest(2),\n    }\n}",
+      "replace": "pub struct WifiObservationModeA {\n    pub rssi_mean: f32,\n    pub noise_mean: f32,\n    pub visible_network_count: u32,\n    pub strongest_1: i32,\n    pub strongest_2: i32,\n    pub strongest_3: i32,\n    pub ssid: String,\n}\n\n/// Reduce raw scans to Mode A aggregate features. Mutation test §142.2: if this function is\n/// changed to leak `ssid`/`bssid` into the output, `privacy_audit::scan_json_for_forbidden_keys`\n/// must catch it.\npub fn sanitize_wifi_mode_a(raw: &[RawWifiScanResult]) -> WifiObservationModeA {\n    let count = raw.len().max(1) as f32;\n    let rssi_mean = raw.iter().map(|r| r.rssi as f32).sum::<f32>() / count;\n    let noise_mean = raw.iter().map(|r| r.noise as f32).sum::<f32>() / count;\n    let mut sorted_rssi: Vec<i32> = raw.iter().map(|r| r.rssi).collect();\n    sorted_rssi.sort_unstable_by(|a, b| b.cmp(a));\n    let strongest = |i: usize| *sorted_rssi.get(i).unwrap_or(&i32::MIN);\n    WifiObservationModeA {\n        rssi_mean,\n        noise_mean,\n        visible_network_count: raw.len() as u32,\n        strongest_1: strongest(0),\n        strongest_2: strongest(1),\n        strongest_3: strongest(2),\n        ssid: raw.first().map(|result| result.ssid.clone()).unwrap_or_default(),\n    }\n}"
     },
     {
       "id": "space-anchor-invalidation-ignored",
@@ -102,6 +126,7 @@
     {
       "id": "belief-camera-signal-must-dominate",
       "file": "crates/liminal-tui/src/belief.rs",
+      "test_command": "cargo test -p liminal-tui --bin liminal-tui belief::tests::camera_presence_is_stronger_than_supporting_modalities -- --exact",
       "invariant": "A positive camera presence signal must remain the dominant occupancy evidence in the first-pass fusion heuristic.",
       "find": "        weighted_sum += presence * 0.65;",
       "replace": "        weighted_sum += presence * 0.0;"
@@ -109,6 +134,7 @@
     {
       "id": "field-note-layer-labels-cannot-be-erased",
       "file": "crates/liminal-tui/src/field_notes.rs",
+      "test_command": "cargo test -p liminal-tui --bin liminal-tui field_notes::tests::notes_are_role_labeled_and_keep_imagined_text_separate -- --exact",
       "invariant": "Every field note must display its epistemic category so imagined text cannot be mistaken for a fact.",
       "find": "        output.push_str(note.layer.label());",
       "replace": "        output.push_str(\"FACT\");"
@@ -117,8 +143,8 @@
       "id": "daemon-fusion-record-is-not-an-observation",
       "file": "crates/liminald/src/lib.rs",
       "invariant": "A daemon-derived fusion result must be persisted as a belief record, never mislabeled as a raw sensor observation.",
-      "find": "            ledger.append_belief_with_features_and_evidence(",
-      "replace": "            ledger.append_observation_with_features("
+      "find": "            ledger.append_belief_with_features_and_evidence(\n                format!(\"belief:{}\", envelope.message_id),\n                \"fusion\",\n                envelope.captured_at_utc_us,\n                belief_features,\n                &evidence_ids,\n            )?;",
+      "replace": "            ledger.append_observation_with_features(\n                format!(\"belief:{}\", envelope.message_id),\n                \"fusion\",\n                envelope.captured_at_utc_us,\n                belief_features,\n            )?;"
     },
     {
       "id": "daemon-replayed-message-is-idempotent",
@@ -172,6 +198,7 @@
     {
       "id": "fusion-contradiction-is-contested",
       "file": "crates/liminald/src/lib.rs",
+      "test_command": "cargo test -p liminal-cli --test daemon_mutation_invariants persisted_fusion_marks_contradictory_live_modalities_contested -- --exact",
       "invariant": "Strongly contradictory live modalities must be labeled contested rather than reported as stable.",
       "find": "    let disagreement = max - min;\n    let state = if disagreement > 0.45 || average_health < 0.25 {\n        \"contested\"\n    } else {\n        \"stable\"\n    };\n    let evidence_ids = observations",
       "replace": "    let disagreement = max - min;\n    let state = if false {\n        \"contested\"\n    } else {\n        \"stable\"\n    };\n    let evidence_ids = observations"

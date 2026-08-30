@@ -58,12 +58,60 @@ jobs:
         run: |
           python3 checks/docs_gate.py --root . README.md
           python3 checks/docs_gate.py --root . --min-diagrams 1 docs/ARCHITECTURE.md
+          python3 checks/docs_gate.py --root . docs/screenshots/README.md
+
+      - name: Mutation harness tests
+        run: >-
+          python3 -m unittest
+          checks/test_mutation_guard.py
+          checks/test_liminal_supervisor.py
+          -v
 
   mutation:
-    name: Mutation guard
+    name: Mutation guard (${{ matrix.scope }})
     needs: deterministic
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: schema
+            prefix: crates/liminal-schema/
+            shard: ""
+            minimum: 2
+          - scope: policy
+            prefix: crates/liminal-policy/
+            shard: ""
+            minimum: 4
+          - scope: ledger
+            prefix: crates/liminal-ledger/
+            shard: ""
+            minimum: 7
+          - scope: memory
+            prefix: crates/liminal-memory/
+            shard: ""
+            minimum: 1
+          - scope: daemon-a
+            prefix: crates/liminald/
+            shard: --shard 1/2
+            minimum: 4
+          - scope: daemon-b
+            prefix: crates/liminald/
+            shard: --shard 2/2
+            minimum: 4
+          - scope: tui-a
+            prefix: crates/liminal-tui/
+            shard: --shard 1/2
+            minimum: 7
+          - scope: tui-b
+            prefix: crates/liminal-tui/
+            shard: --shard 2/2
+            minimum: 7
+          - scope: cli
+            prefix: crates/liminal-cli/
+            shard: ""
+            minimum: 7
     steps:
       - uses: actions/checkout@v5
 
@@ -76,16 +124,47 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # Deliberately break each invariant and require the suite to catch it.
-      # --assert-min is a RATCHET: raise it as invariants are added. Lowering
-      # it is a STOP-list action -- open a PR and say why.
-      #
-      # The guard re-proves the unmutated suite is green before mutating.
+      # Each isolated runner re-proves the full baseline and its scoped suite,
+      # then breaks every invariant in one owning crate.
       - name: Break each invariant and require the suite to catch it
         run: >-
           python3 checks/mutation_guard.py
           --manifest checks/mutations.json
-          --assert-min 43
+          --file-prefix ${{ matrix.prefix }}
+          ${{ matrix.shard }}
+          --assert-min ${{ matrix.minimum }}
+          --report mutation-report-${{ matrix.scope }}.json
+
+      - name: Upload mutation verdicts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report-${{ matrix.scope }}
+          path: mutation-report-${{ matrix.scope }}.json
+          if-no-files-found: warn
+
+  mutation-verdict:
+    name: Mutation guard (exact 43-mutant verdict)
+    needs: mutation
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: mutation-report-*
+          path: mutation-reports
+          merge-multiple: true
+
+      # This rejects missing, duplicate, unknown, survived, stale, and timed-out
+      # results. Sharding never weakens the 43-mutant quality ratchet.
+      - name: Require exact exhaustive mutation coverage
+        run: >-
+          python3 checks/verify_mutation_reports.py
+          --manifest checks/mutations.json
+          mutation-reports/*.json
 
   swift:
     name: Swift build + test (LiminalCore, liminal-doctor)

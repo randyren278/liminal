@@ -7,7 +7,7 @@
 <h1 align="center">Liminal</h1>
 
 <p align="center">
-  <em>Machine perception at the edge of reality.</em>
+  <em>Machine perception.</em>
 </p>
 
 <p align="center">
@@ -31,12 +31,14 @@ timeline. Raw video and audio do not enter the ledger.
 
 ## See it working
 
-![Liminal live sensorium in macOS Terminal](docs/screenshots/liminal-tui-terminal-live.png)
+![Liminal live sensorium in macOS Terminal](docs/screenshots/liminal-live-field-live.png)
 
-This real macOS Terminal capture proves the live ledger path and the corrected
-full-pane bounding box. Live sensor values control the artwork’s intensity and
-shape; darker regions mean that a modality is absent or weak, not that raw media
-is being displayed.
+This fresh macOS Terminal capture is from the real launcher and live sensor
+path. The ledger was receiving derived observations while it was taken. Live
+sensor values control the artwork's intensity and shape; darker regions mean
+that a modality is absent or weak, not that raw media is being displayed. See
+the [screenshot provenance record](docs/screenshots/README.md) for the exact
+capture context.
 
 Liminal is a working local prototype, not a finished sensing product. The Rust
 ledger, Unix-socket daemon, TUI, privacy boundaries, and Swift feature
@@ -50,8 +52,8 @@ memory trials, and production packaging remain open work.
 - `liminal-capture` extracts camera pose, acoustic, Wi-Fi, and Bluetooth
   features in Swift. It never persists raw frames, continuous audio, SSIDs,
   BSSIDs, or Bluetooth names.
-- `liminal-tui` is the operator surface: SPECTRAL, BELIEF, MEMORY, FIELD NOTES,
-  REFERENCE, and CALIBRATION modes, with read-only history and provenance.
+- `liminal-tui` is the operator surface: `1 LIVE FIELD`, `2 BELIEF`, `3 MEMORY`,
+  `4 NOTES`, `5 POSE`, and `6 CALIBRATE`, with read-only history and provenance.
 - `liminal-cli` provides privacy audit, explicit gap recovery, provenance
   inspection, offline calibration scoring, memory replay, retention planning,
   export, and confirmation-gated erasure.
@@ -63,15 +65,12 @@ memory trials, and production packaging remain open work.
 
 Working today:
 
-- local Rust workspace and Swift package build cleanly;
-- 45 Rust ledger/daemon tests cover persistence, recovery, locks, provenance,
-  gaps, and multi-sensor fusion;
-- 56 TUI tests cover mode behavior and rendering paths;
-- 59 Swift tests cover feature extraction, IPC framing, pseudonymization, and
-  sequence persistence;
+- local Rust workspace and Swift package build cleanly, with the verification
+  commands below covering persistence, rendering, feature extraction, IPC,
+  pseudonymization, and sequence persistence;
 - the TUI remains responsive while its ledger snapshot is loaded in a worker;
-- database-lock waits are bounded and stale socket cleanup will not unlink an
-  active daemon.
+- database-lock waits are bounded and daemon startup refuses an active socket
+  before removing a stale one.
 
 Experimental or still requiring real trials:
 
@@ -81,6 +80,30 @@ Experimental or still requiring real trials:
 - memory replay and field-note agents are deterministic, local, and auditable,
   but are not evidence of behavior or continuity;
 - calibration requires human-labeled trial data.
+
+## Operator modes
+
+The TUI keeps its short labels visible in the top bar:
+
+- `LIVE FIELD` shows derived sensor energy and interference. Cyan/teal
+  interference represents acoustic features, slow contour/ripple structure
+  represents Wi-Fi, luminous nodes/halos represent Bluetooth, refractive
+  distortion represents camera presence or motion, and magenta/rose regions
+  represent voice-activity probability. Quiet dark regions mean weak or absent
+  evidence. This is a derived telemetry visualization, not a physical scene or
+  camera feed.
+- `BELIEF` shows the transparent occupancy heuristic: probability, confidence,
+  cross-sensor disagreement, freshness/health, and whether evidence is stable
+  or contested.
+- `MEMORY` shows timestamped temporal lanes for observations and structural
+  records. Gaps remain visible; the TUI does not interpolate them.
+- `NOTES` shows bounded, read-only ledger facts and provenance-aware drafts.
+  Draft text is marked as imagined and is not a claim about behavior.
+- `POSE` shows derived Vision joint positions as a skeleton. It never displays
+  raw camera frames.
+- `CALIBRATE` compares persisted beliefs with an explicitly supplied human
+  label file offline. Without labels it reports that calibration is unavailable
+  and never retunes the live heuristic.
 
 ## Quick start
 
@@ -106,8 +129,11 @@ scripts/run-liminal.sh --no-capture
 
 The TUI reads the local ledger at
 `~/Library/Application Support/Liminal/liminal.db`. Press `q` or `Esc` to
-quit. The launcher terminates child processes, bounds shutdown, removes only a
-stale socket, and cleans its temporary logs.
+quit. The launcher terminates child processes, bounds shutdown, and cleans its
+temporary logs. It leaves socket ownership to the daemon's
+owner-aware next startup, so cleanup cannot unlink a socket another daemon has
+claimed. The first launch may build Rust and Swift dependencies; subsequent
+launches reuse those build products.
 
 To run the full local path, including the Swift capture organ:
 
@@ -132,6 +158,15 @@ swift test
 swiftformat --lint .
 swift run liminal-doctor --json
 ```
+
+The mutation guard runs one green workspace baseline, then uses the owning
+package's suite for each of the 43 handcrafted invariant breaks. If a scoped
+suite stays green, it falls back to the full workspace before declaring that
+mutation survived. Every mutant must also pass a package compile-only gate;
+compiler errors are rejected rather than counted as kills. For a quick local rerun of one failure, add
+`--only <mutation-id> --assert-min 1`. CI runs nine isolated package shards
+and accepts them only when the aggregate report contains every manifest ID
+exactly once and every verdict is `KILLED`.
 
 Useful operator commands:
 

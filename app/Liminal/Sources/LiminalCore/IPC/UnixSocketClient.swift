@@ -37,6 +37,19 @@ public final class UnixSocketClient {
             throw UnixSocketError.socketCreationFailed(errno: savedErrno)
         }
 
+        var sendTimeout = timeval(tv_sec: 2, tv_usec: 0)
+        guard setsockopt(
+            created,
+            SOL_SOCKET,
+            SO_SNDTIMEO,
+            &sendTimeout,
+            socklen_t(MemoryLayout<timeval>.size),
+        ) == 0 else {
+            let savedErrno = errno
+            close(created)
+            throw UnixSocketError.socketCreationFailed(errno: savedErrno)
+        }
+
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathBytes = Array(path.utf8)
