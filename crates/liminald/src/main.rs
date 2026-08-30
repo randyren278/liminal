@@ -4,6 +4,7 @@ use std::io;
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use liminal_ledger::{SqliteLedger, DEFAULT_MAX_SILENT_GAP_US};
 use liminald::{ingest_envelope, read_length_delimited_envelope};
@@ -68,6 +69,10 @@ where
         match stream {
             Ok(stream) => {
                 println!("liminald: accepted a connection");
+                if let Err(error) = stream.set_read_timeout(Some(Duration::from_secs(30))) {
+                    eprintln!("liminald: failed to set client read timeout: {error}");
+                    continue;
+                }
                 // A synchronous bounded queue provides backpressure at the connection boundary:
                 // once all workers and 16 queued clients are occupied, accept-loop progress
                 // pauses instead of creating unbounded threads or memory pressure.

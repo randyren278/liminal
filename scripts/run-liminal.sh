@@ -76,8 +76,12 @@ socket_path="/tmp/liminal-$(id -u)/core.sock"
 # Swift/Rust builds can take longer than the old ten-second startup window on a
 # clean checkout. Keep waiting for the daemon while still failing promptly if
 # it exits during startup.
-for _ in $(seq 1 300); do
-    if [[ -S "$socket_path" ]]; then break; fi
+daemon_ready=0
+for _ in $(seq 1 1800); do
+    if [[ -S "$socket_path" ]] && grep -Fq "liminald: listening on $socket_path" "$DAEMON_LOG"; then
+        daemon_ready=1
+        break
+    fi
     if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
         printf 'liminald exited before opening %s:\n' "$socket_path" >&2
         sed -n '1,120p' "$DAEMON_LOG" >&2
@@ -85,7 +89,7 @@ for _ in $(seq 1 300); do
     fi
     sleep 0.1
 done
-if [[ ! -S "$socket_path" ]]; then
+if [[ "$daemon_ready" -ne 1 ]]; then
     printf 'Timed out waiting for liminald at %s\n' "$socket_path" >&2
     sed -n '1,120p' "$DAEMON_LOG" >&2
     exit 1

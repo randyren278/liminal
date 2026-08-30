@@ -71,6 +71,9 @@ pub enum FrameReadError {
 }
 
 pub const MAX_FRAME_BYTES: usize = 1024 * 1024;
+const MAX_DERIVED_COLLECTION_ITEMS: usize = 128;
+const MAX_DERIVED_STRING_BYTES: usize = 128;
+const MAX_MESSAGE_ID_BYTES: usize = 128;
 
 /// Reads one §15 length-delimited frame (4-byte big-endian length + serialized `Envelope`) from
 /// `reader`. Returns `Ok(None)` on a clean EOF at a frame boundary (the client disconnected
@@ -111,6 +114,8 @@ pub enum IngestError {
     InvalidFeatureShape { stream: String },
     #[error("sensor payload field '{field}' is not allowed for stream '{stream}'")]
     ForbiddenFeatureField { stream: String, field: String },
+    #[error("message ID must be 1..={MAX_MESSAGE_ID_BYTES} bytes")]
+    InvalidMessageId,
     #[error(transparent)]
     Ledger(#[from] liminal_ledger::LedgerError),
 }
@@ -151,25 +156,93 @@ fn validate_feature_payload(stream: &str, features: &serde_json::Value) -> Resul
             });
         }
     }
-    if stream == "bluetooth" {
-        if let Some(clusters) = object.get("clusters").and_then(serde_json::Value::as_array) {
-            for cluster in clusters {
-                let cluster_object =
-                    cluster
-                        .as_object()
-                        .ok_or_else(|| IngestError::InvalidFeatureShape {
-                            stream: stream.to_string(),
-                        })?;
-                for key in cluster_object.keys() {
-                    if !matches!(key.as_str(), "pseudonym" | "rssi") {
-                        return Err(IngestError::ForbiddenFeatureField {
-                            stream: stream.to_string(),
-                            field: format!("clusters[].{key}"),
-                        });
+    let invalid_shape = || IngestError::InvalidFeatureShape {
+        stream: stream.to_string(),
+    };
+    match stream {
+        "camera" => {
+            if !matches!(
+                object.get("body_count").and_then(serde_json::Value::as_str),
+                Some("zero" | "one" | "two_or_more" | "unknown")
+            ) {
+                return Err(invalid_shape());
+            }
+            if let Some(joints_value) = object.get("joints") {
+                let joints = joints_value.as_array().ok_or_else(&invalid_shape)?;
+                if joints.len() > MAX_DERIVED_COLLECTION_ITEMS {
+                    return Err(invalid_shape());
+                }
+                for joint in joints {
+                    let joint_object = joint.as_object().ok_or_else(&invalid_shape)?;
+                    for key in joint_object.keys() {
+                        if !matches!(key.as_str(), "name" | "x" | "y" | "confidence") {
+                            return Err(IngestError::ForbiddenFeatureField {
+                                stream: stream.to_string(),
+                                field: format!("joints[].{key}"),
+                            });
+                        }
+                    }
+                    if joint_object
+                        .get("name")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none_or(|name| name.len() > MAX_DERIVED_STRING_BYTES)
+                    {
+                        return Err(invalid_shape());
+                    }
+                    for key in ["x", "y", "confidence"] {
+                        if !joint_object
+                            .get(key)
+                            .is_some_and(serde_json::Value::is_number)
+                        {
+                            return Err(invalid_shape());
+                        }
                     }
                 }
             }
         }
+        "microphone" | "wifi" => {
+            for &key in allowed {
+                if object.get(key).is_some_and(|value| !value.is_number()) {
+                    return Err(invalid_shape());
+                }
+            }
+        }
+        "bluetooth" => {
+            if object
+                .get("cluster_count")
+                .is_some_and(|value| !value.is_number())
+            {
+                return Err(invalid_shape());
+            }
+            if let Some(clusters_value) = object.get("clusters") {
+                let clusters = clusters_value.as_array().ok_or_else(&invalid_shape)?;
+                if clusters.len() > MAX_DERIVED_COLLECTION_ITEMS {
+                    return Err(invalid_shape());
+                }
+                for cluster in clusters {
+                    let cluster_object = cluster.as_object().ok_or_else(&invalid_shape)?;
+                    for key in cluster_object.keys() {
+                        if !matches!(key.as_str(), "pseudonym" | "rssi") {
+                            return Err(IngestError::ForbiddenFeatureField {
+                                stream: stream.to_string(),
+                                field: format!("clusters[].{key}"),
+                            });
+                        }
+                    }
+                    if cluster_object
+                        .get("pseudonym")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none_or(|pseudonym| pseudonym.len() > MAX_DERIVED_STRING_BYTES)
+                        || !cluster_object
+                            .get("rssi")
+                            .is_some_and(serde_json::Value::is_number)
+                    {
+                        return Err(invalid_shape());
+                    }
+                }
+            }
+        }
+        _ => unreachable!("unsupported streams returned above"),
     }
     Ok(())
 }
@@ -372,6 +445,9 @@ fn sensor_health_timestamp(timestamp_us: i64, now_us: i64) -> f64 {
 /// the same sensor-gap tracking as every other ingest path in `liminal-ledger`.
 pub fn ingest_envelope(ledger: &mut SqliteLedger, envelope: &Envelope) -> Result<(), IngestError> {
     validate_schema_version(envelope)?;
+    if envelope.message_id.is_empty() || envelope.message_id.len() > MAX_MESSAGE_ID_BYTES {
+        return Err(IngestError::InvalidMessageId);
+    }
     // Sensor clients may reconnect and replay their last acknowledged frame. Message IDs are the
     // idempotency key: an already persisted ID is a successful no-op, including its derived
     // belief, rather than a second observation or a database uniqueness failure.
@@ -608,6 +684,33 @@ mod tests {
     }
 
     #[test]
+    fn ingest_envelope_rejects_empty_or_oversized_message_ids() {
+        let path = std::env::temp_dir().join(format!(
+            "liminald-ingest-test-message-id-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let mut ledger = SqliteLedger::open(&path, 30_000_000).unwrap();
+
+        let mut empty_id = sample_envelope(1, br#"{"body_count":"one","joints":[]}"#);
+        empty_id.message_id.clear();
+        assert!(matches!(
+            ingest_envelope(&mut ledger, &empty_id),
+            Err(IngestError::InvalidMessageId)
+        ));
+
+        let mut oversized_id = sample_envelope(1, br#"{"body_count":"one","joints":[]}"#);
+        oversized_id.message_id = "x".repeat(MAX_MESSAGE_ID_BYTES + 1);
+        assert!(matches!(
+            ingest_envelope(&mut ledger, &oversized_id),
+            Err(IngestError::InvalidMessageId)
+        ));
+        assert!(ledger.events().unwrap().is_empty());
+
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
     fn ingest_envelope_rejects_raw_or_unknown_sensor_fields_before_persistence() {
         let path = std::env::temp_dir().join(format!(
             "liminald-ingest-test-privacy-{}.db",
@@ -621,6 +724,17 @@ mod tests {
         assert!(matches!(
             err,
             IngestError::ForbiddenFeatureField { field, .. } if field == "raw_frame"
+        ));
+        assert!(ledger.events().unwrap().is_empty());
+
+        let envelope = sample_envelope(
+            1,
+            br#"{"body_count":"one","joints":[{"name":"nose","x":0.5,"y":0.5,"raw_frame":"pixels"}]}"#,
+        );
+        let err = ingest_envelope(&mut ledger, &envelope).unwrap_err();
+        assert!(matches!(
+            err,
+            IngestError::ForbiddenFeatureField { field, .. } if field == "joints[].raw_frame"
         ));
         assert!(ledger.events().unwrap().is_empty());
 
