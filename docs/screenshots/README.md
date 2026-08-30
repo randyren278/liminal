@@ -6,13 +6,13 @@ ledger, not a camera frame, raw audio capture, or synthetic demo render.
 Mode-specific captures are omitted until they can be made without unrelated
 desktop content.
 
-Capture date: 2026-08-29 (America/Vancouver)
+Capture date: 2026-08-30 (America/Vancouver)
 
-Refreshed capture source: `eb4b9ea` (`Refresh live TUI documentation and
-launcher reliability`). The live-field image was captured from the equivalent
-working tree immediately before that commit and committed as an artifact in
-`d5f5c11`. SHA-256: `56142c408728e5e1d173fb35b2fbf1593892c3a3e4be74404bcff6fe9a29d2cd`.
-Terminal: macOS Terminal, halfblock compatibility renderer.
+Refreshed capture source: user-supplied Desktop capture from the working tree
+at `7e93998` (`Harden runtime supervision and parallelize mutation
+verification`). SHA-256: `460acca35cc012147433689ce231507001a3d6093d7d0f5ec28e467bea1b2fa2`.
+Terminal: macOS Terminal, halfblock compatibility renderer; fully loaded live
+field with derived sensor values visible.
 
 | Image | Surface | Launch / evidence | Sensor state | Live/demo | Raw media |
 |---|---|---|---|---|---|
